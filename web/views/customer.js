@@ -4,6 +4,8 @@ import {
   money, mount, on, onLeave, plural, policyText, raw, session, sheet, skeleton, sportLabel, SPORT_ICON, state, stars, store, titleCase, toast, todayIn, addDays, uid,
 } from '../lib.js';
 import { qrSvg } from '../qr.js';
+import { mountVenueQa } from './community.js';
+import { mediaGrid, wireMedia } from './gallery.js';
 
 const DEFAULT_PLACE = { place: 'Bengaluru', lat: 12.9716, lng: 77.5946 };
 const AMENITY_LABEL = a => ({ drinking_water: 'Drinking water', first_aid: 'First aid', changing_room: 'Changing room', equipment_rental: 'Equipment rental', cctv: 'CCTV', wifi: 'Wi-Fi' })[a] || titleCase(a);
@@ -12,148 +14,52 @@ const TIMES = Array.from({ length: 17 }, (_, i) => `${String(i + 6).padStart(2, 
 
 async function getMeta() { return state.meta || (state.meta = await api('/meta')); }
 
-// ---- Discover ------------------------------------------------------------------------------------------------
-export async function discoverView(main) {
-  const meta = await getMeta().catch(() => ({ sports: Object.keys(SPORT_ICON), surfaces: [], amenities: [], cities: [] }));
-  const today = todayIn();
-  const s = { ...DEFAULT_PLACE, sport: '', date: today, time: '', q: '', amenities: [], sort: '', ...session.get('tc.search', {}) };
-  if (s.date < today) s.date = today;
-  const filterCount = () => ['maxKm', 'maxPrice', 'surface', 'indoor', 'lighting', 'minRating'].filter(k => s[k]).length + s.amenities.length;
-
-  mount(main, html`
-    <h1>Book a turf near you</h1>
-    <div class="hero-search">
-      <div class="row nowrap">
-        <div class="search-box" style="flex:1">${icon('search')}<input type="search" id="q" placeholder="Venue or area" aria-label="Search venues or areas" value="${s.q}"></div>
-        <button class="btn" id="filters" aria-haspopup="dialog">${icon('filter')}<span>Filters</span><span id="fcount"></span></button>
-      </div>
-      <div class="row"><button class="chip" id="place">${icon('pin')}<span id="place-l">${s.place}</span></button>
-        <label class="sr-only" for="time">Preferred time</label>
-        <select id="time" style="width:auto;min-height:36px;border-radius:99px;padding:4px 12px">${[''].concat(TIMES).map(t => html`<option value="${t}" ${t === s.time ? 'selected' : ''}>${t ? `From ${fmtTime(t)}` : 'Any time'}</option>`)}</select>
-      </div>
-      <div class="chips" role="group" aria-label="Sport">
-        <button class="chip" data-sport="" aria-pressed="${!s.sport}">All sports</button>
-        ${meta.sports.map(sp => html`<button class="chip" data-sport="${sp}" aria-pressed="${s.sport === sp}">${sportLabel(sp)}</button>`)}
-      </div>
-      <div class="date-strip" role="group" aria-label="Date">${Array.from({ length: 10 }, (_, i) => addDays(today, i)).map(d => html`
-        <button class="date-pill" data-date="${d}" aria-pressed="${d === s.date}"><span>${i0(d, today)}</span><b>${Number(d.slice(8))}</b><span>${fmtDate(d).split(' ')[2] || ''}</span></button>`)}</div>
-    </div>
-    <div class="row between" style="margin:8px 0"><h2 id="count" style="margin:0;font-size:1rem" aria-live="polite"></h2>
-      <select id="sort" aria-label="Sort by" style="width:auto;min-height:36px;padding:4px 10px">
-        ${[['', 'Best match'], ['distance', 'Nearest'], ['price', 'Lowest price'], ['rating', 'Top rated']].map(([v, l]) => html`<option value="${v}" ${s.sort === v ? 'selected' : ''}>${l}</option>`)}</select></div>
-    <div id="results" class="stack"></div>`);
-
-  let timer, seq = 0;
-  const save = () => session.set('tc.search', s);
-  async function load() {
-    save();
-    $('#fcount', main).textContent = filterCount() ? ` · ${filterCount()}` : '';
-    const box = $('#results', main); mount(box, skeleton('card', 4)); $('#count', main).textContent = 'Finding turfs…';
-    const qs = new URLSearchParams({ lat: s.lat, lng: s.lng, date: s.date });
-    for (const k of ['sport', 'time', 'q', 'maxKm', 'surface', 'indoor', 'minRating', 'sort']) if (s[k]) qs.set(k, s[k]);
-    if (s.maxPrice) qs.set('maxPrice', s.maxPrice * 100);
-    if (s.lighting) qs.set('lighting', 'true');
-    if (s.amenities.length) qs.set('amenities', s.amenities.join(','));
-    const mine = ++seq;
-    try {
-      const venues = await api('/venues?' + qs);
-      if (mine !== seq) return;
-      store.set('tc.lastResults', venues);
-      render(venues);
-    } catch (e) {
-      if (mine !== seq) return;
-      const cached = store.get('tc.lastResults');
-      if (e.code === 'network' && cached) { render(cached); toast('Offline: showing your last search'); return; }
-      mount(box, errorView(e)); $('[data-retry]', box).onclick = load; $('#count', main).textContent = '';
-    }
-  }
-  function render(venues) {
-    const open = venues.filter(v => v.availableSlots > 0).length;
-    $('#count', main).textContent = `${plural(open, 'turf')} with free slots ${s.time ? `from ${fmtTime(s.time)} ` : ''}${s.date === today ? 'today' : 'on ' + dayLabel(s.date, today)}`;
-    const qs = new URLSearchParams({ date: s.date }); if (s.sport) qs.set('sport', s.sport);
-    mount($('#results', main), venues.length ? venues.map(v => html`
-      <a class="card venue-card" href="#/venue/${v.slug}?${qs}">
-        ${photo(v)}
-        <div style="min-width:0">
-          <h3>${v.name}</h3>
-          <div class="meta">${v.rating ? html`<span>${stars(v.rating)}<span class="faint">(${v.reviews})</span></span>` : html`<span class="tag">New</span>`}
-            ${v.distanceKm != null ? html`<span>${icon('pin')}${v.distanceKm} km</span>` : ''}<span>${v.address.split(',').pop().trim()}</span></div>
-          <div class="meta" style="margin-top:4px"><span>${v.sports.map(sp => SPORT_ICON[sp]).join(' ')}</span><span>${v.indoor ? 'Indoor' : 'Outdoor'}</span>${v.lighting ? html`<span>Floodlit</span>` : ''}</div>
-          <div style="margin-top:4px">${v.fromPrice != null ? html`<span class="price">${money(v.fromPrice)}</span><span class="faint"> /slot</span>` : html`<span class="faint">Fully booked this day</span>`}</div>
-          ${v.nextSlots?.length ? html`<div class="slots" aria-label="Next free times">${v.nextSlots.map(t => html`<span>${fmtTime(t)}</span>`)}</div>` : ''}
-        </div>
-      </a>`) : empty('search', 'No turfs match', 'Try another date or time, or clear some filters.', html`<button class="btn" id="clear">Clear filters</button>`));
-    $('#clear', main)?.addEventListener('click', () => { Object.assign(s, { time: '', q: '', maxKm: '', maxPrice: '', surface: '', indoor: '', lighting: false, minRating: '', amenities: [] }); discoverView(main); });
-  }
-
-  on(main, 'click', '[data-sport]', (_e, b) => { s.sport = b.dataset.sport; $$('[data-sport]', main).forEach(x => x.setAttribute('aria-pressed', x === b)); load(); });
-  on(main, 'click', '[data-date]', (_e, b) => { s.date = b.dataset.date; $$('[data-date]', main).forEach(x => x.setAttribute('aria-pressed', x === b)); load(); });
-  $('#time', main).onchange = e => { s.time = e.target.value; load(); };
-  $('#sort', main).onchange = e => { s.sort = e.target.value; load(); };
-  $('#q', main).oninput = e => { clearTimeout(timer); timer = setTimeout(() => { s.q = e.target.value.trim(); load(); }, 300); };
-  $('#place', main).onclick = () => sheet({
-    title: 'Where do you want to play?',
-    body: html`<button class="btn primary block" id="geo">${icon('pin')}Use my current location</button><p class="form-error" id="geo-err" role="alert"></p>
-      <h3 style="margin-top:16px">Cities</h3><div class="list">${(meta.cities.length ? meta.cities : [{ city: 'Bengaluru', lat: 12.9716, lng: 77.5946, venues: 0 }]).map(c => html`
-        <button class="list-item" style="cursor:pointer;text-align:left" data-city="${c.city}" data-lat="${c.lat}" data-lng="${c.lng}"><div class="grow"><div class="title">${c.city}</div><div class="faint">${plural(c.venues, 'venue')}</div></div></button>`)}</div>`,
-    onMount: (el, close) => {
-      const set = (place, lat, lng) => { Object.assign(s, { place, lat, lng }); $('#place-l', main).textContent = place; close(); load(); };
-      $('#geo', el).onclick = e => busy(e.currentTarget, () => new Promise(res => {
-        if (!navigator.geolocation) { $('#geo-err', el).textContent = 'Location is not available in this browser.'; return res(); }
-        navigator.geolocation.getCurrentPosition(p => { set('Near you', +p.coords.latitude.toFixed(4), +p.coords.longitude.toFixed(4)); res(); },
-          () => { $('#geo-err', el).textContent = 'Location permission was denied. Pick a city instead.'; res(); }, { timeout: 10000, maximumAge: 600000 });
-      }));
-      on(el, 'click', '[data-city]', (_e, b) => set(b.dataset.city, +b.dataset.lat, +b.dataset.lng));
-    },
-  });
-  $('#filters', main).onclick = () => sheet({
-    title: 'Filters',
-    body: html`<form id="ff">
-      <div class="grid-2"><div class="field"><label for="f-km">Distance</label><select id="f-km">${[['', 'Any distance'], ['3', 'Within 3 km'], ['5', 'Within 5 km'], ['10', 'Within 10 km'], ['25', 'Within 25 km']].map(([v, l]) => html`<option value="${v}" ${String(s.maxKm || '') === v ? 'selected' : ''}>${l}</option>`)}</select></div>
-      <div class="field"><label for="f-price">Max price per slot (₹)</label><input id="f-price" type="number" min="0" step="50" inputmode="numeric" value="${s.maxPrice || ''}" placeholder="Any"></div>
-      <div class="field"><label for="f-surface">Surface</label><select id="f-surface"><option value="">Any surface</option>${meta.surfaces.map(x => html`<option value="${x}" ${s.surface === x ? 'selected' : ''}>${titleCase(x)}</option>`)}</select></div>
-      <div class="field"><label for="f-indoor">Indoor / outdoor</label><select id="f-indoor">${[['', 'Either'], ['indoor', 'Indoor'], ['outdoor', 'Outdoor']].map(([v, l]) => html`<option value="${v}" ${s.indoor === v ? 'selected' : ''}>${l}</option>`)}</select></div>
-      <div class="field"><label for="f-rating">Rating</label><select id="f-rating">${[['', 'Any rating'], ['3.5', '3.5+'], ['4', '4.0+'], ['4.5', '4.5+']].map(([v, l]) => html`<option value="${v}" ${String(s.minRating || '') === v ? 'selected' : ''}>${l}</option>`)}</select></div></div>
-      <label class="check"><input type="checkbox" id="f-light" ${s.lighting ? 'checked' : ''}>Floodlights for night games</label>
-      <fieldset style="border:0;padding:0;margin:12px 0 0"><legend class="label">Amenities</legend><div class="grid-2" style="gap:0 12px">
-        ${meta.amenities.map(a => html`<label class="check"><input type="checkbox" name="amenity" value="${a}" ${s.amenities.includes(a) ? 'checked' : ''}>${AMENITY_LABEL(a)}</label>`)}</div></fieldset></form>`,
-    foot: html`<button class="btn ghost" id="f-reset">Reset</button><button class="btn primary" id="f-apply">Show turfs</button>`,
-    onMount: (el, close) => {
-      $('#f-apply', el).onclick = () => {
-        Object.assign(s, { maxKm: $('#f-km', el).value, maxPrice: $('#f-price', el).value, surface: $('#f-surface', el).value, indoor: $('#f-indoor', el).value,
-          minRating: $('#f-rating', el).value, lighting: $('#f-light', el).checked, amenities: $$('[name=amenity]:checked', el).map(x => x.value) });
-        close(); load();
-      };
-      $('#f-reset', el).onclick = () => { Object.assign(s, { maxKm: '', maxPrice: '', surface: '', indoor: '', minRating: '', lighting: false, amenities: [] }); close(); load(); };
-    },
-  });
-  load();
-}
 const i0 = (d, today) => d === today ? 'Today' : fmtDate(d).split(',')[0];
 
 // ---- Venue + slot picker ------------------------------------------------------------------------------------------
+// Group slots into Morning / Afternoon / Evening / Night so the picker reads as a day timeline.
+const PERIODS = [['Morning', '🌅', 12], ['Afternoon', '☀️', 16], ['Evening', '🌇', 20], ['Night', '🌙', 24]];
+function periods(slots) {
+  return PERIODS.map(([label, emoji, end], i) => {
+    const from = i ? PERIODS[i - 1][2] : 0;
+    return { label, icon: emoji, slots: slots.filter(s => { const h = Number(s.start.slice(0, 2)); return h >= from && h < end; }) };
+  }).filter(g => g.slots.length);
+}
+// "Best price" / "Peak" only when the court's prices actually differ across the day.
+function priceTagger(all) {
+  const prices = all.filter(x => x.state === 'available' || x.state === 'almost_full').map(x => x.price);
+  const lo = Math.min(...prices), hi = Math.max(...prices);
+  if (!prices.length || lo === hi) return () => null;
+  return s => s.price === lo ? ['best', 'Best price'] : s.price === hi ? ['peak', 'Peak'] : null;
+}
 const STATE_LABEL = { available: 'Available', almost_full: 'Almost full', held: 'Being booked', booked: 'Booked', closed: 'Closed' };
-export async function venueView(main, { slug }, query) {
+export async function venueView(main, { slug }, query, opts = {}) {
   mount(main, html`<div class="skeleton sk-block"></div>${skeleton('line', 4)}`);
   const v = await api(`/venues/${encodeURIComponent(slug)}`);
   document.title = `${v.name} · TurfConnect`;
   const saved = session.get(`tc.pick.${v.id}`, {});
   const pick = {
-    date: query.get('date') || saved.date || v.today, sport: query.get('sport') || saved.sport || v.sports[0],
-    courtId: saved.courtId || null, starts: saved.starts || [], time: query.get('time') || '',
+    date: query.get('date') || saved.date || v.today, sport: opts.sport || query.get('sport') || saved.sport || v.sports[0],
+    courtId: saved.courtId || null, starts: saved.starts || [], time: query.get('time') || '', coachId: '',
   };
   if (pick.date < v.today) pick.date = v.today;
   if (!v.sports.includes(pick.sport)) pick.sport = v.sports[0];
-  let avail = null;
+  let avail = null, coachOpts = [];
+  // On a game's page, that game's photos and videos lead the page.
+  const media = opts.embedded ? (await api(`/media?venueId=${v.id}&sport=${pick.sport}`).catch(() => [])).sort((a, b) => (b.sport === pick.sport) - (a.sport === pick.sport)) : [];
+  const pics = media.filter(m => m.kind === 'image').map(m => m.url), clips = media.filter(m => m.kind !== 'image'), photos = pics.length ? pics : v.photos;
   const persist = () => session.set(`tc.pick.${v.id}`, { date: pick.date, sport: pick.sport, courtId: pick.courtId, starts: pick.starts });
 
   mount(main, html`
-    <a href="#/" class="btn ghost small no-print" style="margin-left:-8px">${icon('back')}All turfs</a>
     <div class="layout-venue">
       <div class="v-top">
-        <div class="gallery" aria-label="Photos">${(v.photos.length ? v.photos : ['/img/venue-1.svg']).map((p, i) => html`<img src="${p}" alt="${v.name} photo ${i + 1}" ${i ? raw('loading="lazy"') : ''} width="640" height="360">`)}</div>
+        <div class="hero-gallery">
+          <div class="gallery" aria-label="Photos">${(photos.length ? photos : ['/img/venue-1.svg']).map((p, i) => html`<img src="${p}" alt="${v.name} photo ${i + 1}" ${i ? raw('loading="lazy"') : ''} width="640" height="360">`)}</div>
+          ${opts.embedded ? '' : html`<a href="#/" class="float-btn no-print" aria-label="Back">${icon('back')}</a>`}
+          ${photos.length > 1 ? html`<span class="photo-count" id="photo-count" aria-hidden="true">1 / ${photos.length}</span>` : ''}
+        </div>
         <div class="venue-head">
-          <h1>${v.name}</h1>
+          <h1>${opts.title || v.name}</h1>
           <div class="row" style="gap:6px 14px">${v.rating ? html`<a href="#reviews" style="color:inherit;text-decoration:none">${stars(v.rating)} <span class="faint">${plural(v.reviews, 'review')}</span></a>` : html`<span class="tag">New venue</span>`}
             <span class="muted">${v.address}, ${v.city}</span></div>
           <div class="facts">${v.sports.map(sp => html`<span class="tag good">${sportLabel(sp)}</span>`)}<span class="tag">${v.indoor ? 'Indoor' : 'Outdoor'}</span><span class="tag">${titleCase(v.surface)}</span>
@@ -164,8 +70,11 @@ export async function venueView(main, { slug }, query) {
         </div>
       </div>
       <div class="v-details">
+        ${clips.length ? html`<section class="section" id="clips" style="margin-top:0"><h2>Videos</h2>${mediaGrid(clips)}</section>` : ''}
         <section class="section"><h2>About</h2><p class="muted">${v.description}</p></section>
         <section class="section"><h2>Amenities</h2><div class="amenities">${v.amenities.map(a => html`<span>${icon('check')}${AMENITY_LABEL(a)}</span>`)}</div></section>
+        <section class="section" id="vend" hidden></section>
+        <section class="section" id="vqa" hidden></section>
         ${v.rules ? html`<section class="section"><h2>Venue rules</h2><ul class="muted" style="padding-left:20px;margin:0">${v.rules.split('\n').filter(Boolean).map(r => html`<li>${r}</li>`)}</ul></section>` : ''}
         <section class="section"><h2>Cancellation policy</h2><p class="muted">${policyText(v.policy)}</p></section>
         <section class="section" id="reviews"><h2>Reviews</h2>
@@ -182,14 +91,26 @@ export async function venueView(main, { slug }, query) {
         <h2 id="pick-h">Pick a slot</h2>
         <div class="date-strip" role="group" aria-label="Date">${Array.from({ length: Math.min(14, v.bookingWindowDays + 1) }, (_, i) => addDays(v.today, i)).map(d => html`
           <button class="date-pill" data-date="${d}" aria-pressed="${d === pick.date}"><span>${i0(d, v.today)}</span><b>${Number(d.slice(8))}</b><span>${fmtDate(d).split(' ')[2] || ''}</span></button>`)}</div>
-        ${v.sports.length > 1 ? html`<div class="chips wrap" role="group" aria-label="Sport" style="margin:8px 0">${v.sports.map(sp => html`<button class="chip" data-sport="${sp}" aria-pressed="${sp === pick.sport}">${sportLabel(sp)}</button>`)}</div>` : ''}
+        ${v.sports.length > 1 && !opts.embedded ? html`<div class="chips wrap" role="group" aria-label="Sport" style="margin:8px 0">${v.sports.map(sp => html`<button class="chip" data-sport="${sp}" aria-pressed="${sp === pick.sport}">${sportLabel(sp)}</button>`)}</div>` : ''}
         <div id="slots" aria-live="polite"></div>
         <div class="legend" aria-label="Legend">${['available', 'almost_full', 'held', 'booked', 'closed'].map(k => html`<span><i class="${k}"></i>${STATE_LABEL[k]}</span>`)}<span><i class="selected"></i>Your pick</span></div>
         <p class="faint">${v.holdMinutes}-minute hold while you pay. ${policyText(v.policy).split('.')[0]}.</p>
+        <div id="coach-box" class="coach-box" hidden></div>
         <div class="sticky-cta" id="cta" hidden></div>
       </aside>
     </div>`);
 
+  api(`/vending/machines?venueId=${v.id}`).then(list => {
+    if (!list.length) return;
+    const box = $('#vend', main); box.hidden = false;
+    mount(box, html`<h2>Snacks &amp; coffee</h2><div class="list">${list.map(m => html`<a class="list-item" href="#/vending/${m.id}"><span class="machine-ico" aria-hidden="true">${m.kind === 'coffee' ? '☕' : m.kind === 'snacks' ? '🍿' : '🥤'}</span>
+      <div class="grow"><div class="title">${m.name}</div><div class="faint">${m.location || 'On site'} · order ahead, collect with a code</div></div>
+      <span class="tag ${m.status === 'online' ? 'good' : m.status === 'fault' ? 'bad' : 'warn'}">${m.status === 'online' ? 'Working' : m.status === 'fault' ? 'Out of order' : 'Offline'}</span></a>`)}</div>`);
+  }).catch(() => {});
+  mountVenueQa($('#vqa', main), v).catch(() => {});
+  wireMedia(main, () => media);
+  const gal = $('.gallery', main), counter = $('#photo-count', main);
+  if (counter) gal.addEventListener('scroll', () => { const n = gal.children.length; counter.textContent = `${Math.min(n, Math.round(gal.scrollLeft / (gal.scrollWidth / n)) + 1)} / ${n}`; }, { passive: true });
   $('#more-reviews', main)?.addEventListener('click', e => { $$('[data-more]', main).forEach(r => { r.hidden = false; }); e.currentTarget.remove(); });
 
   async function loadSlots({ quiet = false } = {}) {
@@ -208,28 +129,47 @@ export async function venueView(main, { slug }, query) {
     const box = $('#slots', main);
     if (!avail.courts.length) { mount(box, empty('calendar', 'No courts for this sport', 'Try another sport.')); return drawCta(); }
     const court = avail.courts.find(c => c.id === pick.courtId);
-    const free = court.slots.filter(isFree).length;
+    const free = court.slots.filter(isFree).length, tagOf = priceTagger(court.slots);
     mount(box, html`
       ${avail.courts.length > 1 ? html`<div class="court-tabs" role="tablist" aria-label="Court">${avail.courts.map(c => html`
         <button class="chip" role="tab" data-court="${c.id}" aria-selected="${c.id === court.id}" aria-pressed="${c.id === court.id}">${c.name}<span class="faint" style="color:inherit;opacity:.8">· ${c.slots.filter(isFree).length}</span></button>`)}</div>` : ''}
       <p class="faint" style="margin:0 0 8px">${court.indoor ? 'Indoor' : 'Outdoor'} · ${titleCase(court.surface)} · ${plural(free, 'slot')} free ${onDay(pick.date, v.today)}</p>
       ${free ? '' : html`<div class="notice warn" style="margin-bottom:8px">${icon('info')}<div>This court is full ${onDay(pick.date, v.today)}. Try another court or date.</div></div>`}
-      <div class="slot-grid">${court.slots.filter(s => s.reason !== 'Past').map(s => html`
-        <button class="slot ${s.state}" data-start="${s.start}" ${isFree(s) ? '' : raw('aria-disabled="true"')} aria-pressed="${pick.starts.includes(s.start)}"
-          aria-label="${fmtRange(s.start, s.end)}, ${money(s.price)}, ${pick.starts.includes(s.start) ? 'selected' : STATE_LABEL[s.state]}" ${s.start === pick.time && isFree(s) ? raw('data-suggested') : ''}>
-          ${fmtTime(s.start)}<small>${isFree(s) ? money(s.price) : STATE_LABEL[s.state]}</small></button>`)}</div>
+      ${free > 0 && free <= 3 ? html`<p class="urgency-note">${icon('clock')}Only ${plural(free, 'slot')} left ${onDay(pick.date, v.today)}. Grab yours.</p>` : ''}
+      ${periods(court.slots.filter(s => s.reason !== 'Past')).map(g => html`
+        <section class="period" aria-label="${g.label}"><h3 class="period-h"><span>${g.icon}</span>${g.label}</h3>
+        <div class="slot-grid">${g.slots.map(s => html`
+          <button class="slot ${s.state}" data-start="${s.start}" ${isFree(s) ? '' : raw('aria-disabled="true"')} aria-pressed="${pick.starts.includes(s.start)}"
+            aria-label="${fmtRange(s.start, s.end)}, ${money(s.price)}, ${pick.starts.includes(s.start) ? 'selected' : STATE_LABEL[s.state]}" ${s.start === pick.time && isFree(s) ? raw('data-suggested') : ''}>
+            ${isFree(s) && tagOf(s) ? html`<em class="ptag ${tagOf(s)[0]}">${tagOf(s)[1]}</em>` : ''}
+            ${fmtTime(s.start)}<small>${isFree(s) ? money(s.price) : STATE_LABEL[s.state]}</small></button>`)}</div></section>`)}
       ${court.slots.every(s => s.reason === 'Past') ? html`<p class="muted">All slots for today have passed.</p>` : ''}`);
-    drawCta();
+    drawCta(); refreshCoaches();
     const suggested = $('[data-suggested]', box); if (suggested && !pick.starts.length) { suggested.scrollIntoView({ block: 'nearest' }); pick.time = ''; }
+  }
+  // Coaches who cover this game (or all games) and are free for every chosen slot.
+  async function refreshCoaches() {
+    const box = $('#coach-box', main);
+    if (!pick.starts.length) { coachOpts = []; pick.coachId = ''; box.hidden = true; return; }
+    try { coachOpts = (await api(`/venues/${v.id}/coach-options?date=${pick.date}&sport=${pick.sport}&starts=${pick.starts.join(',')}`)).options; } catch { coachOpts = []; }
+    if (!coachOpts.some(c => c.id === pick.coachId)) pick.coachId = '';
+    if (!pick.starts.length) return;
+    box.hidden = !coachOpts.length;
+    mount(box, html`<h3>Train with a coach <span class="faint">(optional)</span></h3><div class="coach-opts" role="radiogroup" aria-label="Coach">
+      <label class="coach-opt"><input type="radio" name="coach" value="" ${pick.coachId ? '' : raw('checked')}><span class="grow"><b>No coach</b><small>Just the slot</small></span></label>
+      ${coachOpts.map(c => html`<label class="coach-opt"><input type="radio" name="coach" value="${c.id}" ${pick.coachId === c.id ? raw('checked') : ''}><span class="grow"><b>${c.name}</b>
+        <small>${c.scope === 'all' ? 'Coaches every game' : titleCase(c.specialty) + ' coach'}${c.rating ? ' · ★ ' + c.rating : ''}</small></span><b class="fee">+${money(c.fee)}</b></label>`)}</div>
+      <a class="faint" href="#/coaches">Prefer a private one-to-one session? Browse individual coaches</a>`);
+    drawCta();
   }
   function drawCta() {
     const cta = $('#cta', main);
     if (!pick.starts.length) { cta.hidden = true; return; }
     const court = avail.courts.find(c => c.id === pick.courtId);
     const chosen = court.slots.filter(s => pick.starts.includes(s.start));
-    const total = chosen.reduce((a, s) => a + s.price, 0);
+    const coach = coachOpts.find(c => c.id === pick.coachId), total = chosen.reduce((a, s) => a + s.price, 0) + (coach ? coach.fee : 0);
     cta.hidden = false;
-    mount(cta, html`<div><div style="font-weight:800">${money(total)}</div><div class="faint">${plural(chosen.length, 'hour', 'hours')} · ${fmtRange(chosen[0].start, chosen.at(-1).end)}</div></div>
+    mount(cta, html`<div><div style="font-weight:800">${money(total)}</div><div class="faint">${plural(chosen.length, 'hour', 'hours')} · ${fmtRange(chosen[0].start, chosen.at(-1).end)}${coach ? ` · with ${coach.name}` : ''}</div></div>
       <button class="btn primary" id="continue">Continue${icon('back')}</button>`);
     $('#continue svg', cta).style.transform = 'rotate(180deg)';
   }
@@ -244,6 +184,7 @@ export async function venueView(main, { slug }, query) {
     persist(); drawSlots();
   }
 
+  on(main, 'change', '[name=coach]', (_e, r) => { pick.coachId = r.value; drawCta(); });
   on(main, 'click', '[data-date]', (_e, b) => { pick.date = b.dataset.date; pick.starts = []; $$('[data-date]', main).forEach(x => x.setAttribute('aria-pressed', x === b)); persist(); loadSlots(); });
   on(main, 'click', '[data-sport]', (_e, b) => { pick.sport = b.dataset.sport; pick.starts = []; $$('[data-sport]', main).forEach(x => x.setAttribute('aria-pressed', x === b)); persist(); loadSlots(); });
   on(main, 'click', '[data-court]', (_e, b) => { pick.courtId = b.dataset.court; pick.starts = []; persist(); drawSlots(); });
@@ -252,11 +193,11 @@ export async function venueView(main, { slug }, query) {
     if (!state.token) { persist(); toast('Sign in to book — your slot choice is saved'); return go(`#/login?next=${encodeURIComponent(`#/venue/${v.slug}?date=${pick.date}&sport=${pick.sport}`)}`); }
     await busy(b, async () => {
       try {
-        const booking = await api('/bookings', { method: 'POST', idempotencyKey: uid(), body: { venueId: v.id, courtId: pick.courtId, date: pick.date, starts: pick.starts, sport: pick.sport } });
+        const booking = await api('/bookings', { method: 'POST', idempotencyKey: uid(), body: { venueId: v.id, courtId: pick.courtId, date: pick.date, starts: pick.starts, sport: pick.sport, coachId: pick.coachId || undefined } });
         session.del(`tc.pick.${v.id}`);
         go(`#/checkout/${booking.id}`);
       } catch (e) {
-        if (e.status === 409) { pick.starts = []; persist(); await loadSlots({ quiet: true }); }
+        if (e.status === 409) { if (e.code !== 'coach_unavailable') pick.starts = []; pick.coachId = ''; persist(); await loadSlots({ quiet: true }); }
         throw e;
       }
     });
@@ -283,7 +224,7 @@ const summary = b => html`<div class="row nowrap" style="align-items:flex-start"
     <img src="${b.venue.photos[0] || '/img/venue-1.svg'}" alt="" width="72" height="72" style="width:72px;height:72px;border-radius:10px;object-fit:cover">
     <div><h3 style="margin:0">${b.venue.name}</h3><div class="muted">${b.court.name} · ${sportLabel(b.sport)}</div>
     <div style="font-weight:700">${fmtLongDate(b.date)}</div><div>${fmtRange(b.startTime, b.endTime)}</div></div></div>`;
-const priceLines = b => html`<div class="price-lines">${b.slots.map(s => html`<div class="line"><span>${fmtRange(s.start, s.end)}</span><span>${money(s.price)}</span></div>`)}
+const priceLines = b => html`<div class="price-lines">${b.slots.map(s => html`<div class="line"><span>${s.label || fmtRange(s.start, s.end)}</span><span>${money(s.price)}</span></div>`)}
   ${b.discount ? html`<div class="line" style="color:var(--brand)"><span>Promo ${b.coupon || ''}</span><span>−${money(b.discount)}</span></div>` : ''}
   <div class="line total"><span>Total</span><span>${money(b.amount)}</span></div><div class="faint">This is the final price. No booking fees, nothing extra at the venue.</div></div>`;
 
@@ -341,8 +282,9 @@ export async function checkoutView(main, { id }) {
 export async function payView(main, { intent }) {
   mount(main, skeleton('block', 1));
   const p = await api(`/payments/sandbox/${intent}`);
-  if (p.status !== 'requires_payment') return go(`#/booking/${p.bookingId}`, { replace: true });
-  mount(main, html`${steps(2)}<div class="gateway">
+  const afterPay = p.orderId ? `#/order/${p.orderId}` : `#/booking/${p.bookingId}`;
+  if (p.status !== 'requires_payment') return go(afterPay, { replace: true });
+  mount(main, html`${p.orderId ? '' : steps(2)}<div class="gateway">
     <div class="gw-head">${icon('shield')}<div><b>TurfPay</b> <span style="opacity:.8">· Secure checkout</span></div><span class="spacer" style="flex:1"></span><span class="tag warn">Test mode</span></div>
     <div class="gw-body">
       <div class="row between"><span class="muted">Paying TurfConnect · ${p.venue}</span><span class="faint">Ref ${p.ref}</span></div>
@@ -351,12 +293,12 @@ export async function payView(main, { intent }) {
       <div class="chips wrap" style="margin:14px 0" aria-hidden="true"><span class="chip on">UPI</span><span class="chip">Card</span><span class="chip">Net banking</span><span class="chip">Wallet</span></div>
       <button class="btn primary block" data-outcome="success" style="min-height:52px">Simulate successful payment</button>
       <button class="btn danger block" data-outcome="failure" style="margin-top:10px">Simulate failed payment</button>
-      <p class="faint" style="text-align:center;margin-top:12px">Slot held for <span class="countdown" id="cd"></span></p>
+      <p class="faint" style="text-align:center;margin-top:12px">${p.orderId ? 'Order held for' : 'Slot held for'} <span class="countdown" id="cd"></span></p>
     </div></div>`);
   countdown($('#cd', main), p.holdExpiresAt);
   on(main, 'click', '[data-outcome]', (_e, b) => busy(b, async () => {
     await api(`/payments/sandbox/${intent}/complete`, { method: 'POST', body: { outcome: b.dataset.outcome } });
-    go(`#/booking/${p.bookingId}?paying=1`);
+    go(`${afterPay}?paying=1`);
   }));
 }
 
@@ -367,14 +309,40 @@ function ics(b) {
     `SUMMARY:${sportLabel(b.sport).replace(/^\S+ /, '')} at ${b.venue.name}`, `LOCATION:${b.venue.address}\\, ${b.venue.city}`, `DESCRIPTION:${b.court.name}. Booking ref ${b.ref}.`,
     'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Game in 2 hours', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
 }
+const canJoin = b => Date.now() >= b.startAt - 15 * 60000 && Date.now() < b.endAt;
+const joinCard = b => html`<div class="ticket join-card"><div class="ticket-top"><div class="ticket-sport">Online · Live</div><h2>${b.session.title}</h2>
+  <div class="ticket-when">${fmtLongDate(b.date)}</div><div class="ticket-time">${fmtRange(b.startTime, b.endTime)}</div>${b.session.trainer ? html`<div class="ticket-court">with ${b.session.trainer}</div>` : ''}</div>
+  <div class="ticket-bottom">${b.status === 'completed' || b.endAt <= Date.now() ? html`<p class="muted">This class has ended.</p>`
+    : canJoin(b) ? html`<a class="btn primary block" href="${b.session.joinUrl}" target="_blank" rel="noopener noreferrer">${icon('ext')}Join the class</a>`
+    : html`<p class="muted" style="margin:0">Your join link opens 15 minutes before the class starts.</p><button class="btn block" disabled>${icon('clock')}Join class</button>`}
+    <div class="ref">${b.ref}</div><div class="faint">Booking reference</div>${statusTag(b.status)}</div></div>`;
 const STATUS_TAG = { held: ['warn', 'Awaiting payment'], confirmed: ['good', 'Confirmed'], completed: ['info', 'Played'], cancelled: ['bad', 'Cancelled'], failed: ['bad', 'Payment failed'], expired: ['', 'Expired'] };
 const statusTag = s => html`<span class="tag ${STATUS_TAG[s][0]}">${STATUS_TAG[s][1]}</span>`;
+
+// One-off confetti burst: DOM pieces animated by CSS, removed afterwards. Skipped when the user prefers reduced motion.
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const layer = document.createElement('div'); layer.className = 'confetti'; layer.setAttribute('aria-hidden', 'true');
+  const colors = ['#0d7a3e', '#6cc24a', '#f2a516', '#2a78d6', '#e8505b', '#ffffff'];
+  for (let i = 0; i < 70; i++) {
+    const p = document.createElement('i');
+    p.style.setProperty('--x', `${(Math.random() - .5) * 110}vw`);
+    p.style.setProperty('--r', `${Math.random() * 720 - 360}deg`);
+    p.style.setProperty('--d', `${1.6 + Math.random() * 1.4}s`);
+    p.style.left = `${40 + Math.random() * 20}%`;
+    p.style.background = colors[i % colors.length];
+    layer.append(p);
+  }
+  document.body.append(layer);
+  setTimeout(() => layer.remove(), 3500);
+}
 
 export async function bookingView(main, { id }, query) {
   mount(main, skeleton('block', 1));
   let b, offline = false;
   try { b = await api(`/bookings/${id}`); store.set(`tc.ticket.${id}`, b); }
   catch (e) { b = store.get(`tc.ticket.${id}`); if (!b || e.code !== 'network') throw e; offline = true; }
+  let celebrated = false;
   const waiting = () => b.status === 'held' && (query.get('paying') || b.payment?.status === 'requires_payment');
   const refresh = async () => { try { b = await api(`/bookings/${id}`); store.set(`tc.ticket.${id}`, b); draw(); } catch {} };
 
@@ -386,7 +354,7 @@ export async function bookingView(main, { id }, query) {
           <p class="muted">This usually takes a few seconds. Don't close this page.</p></div>`
       : b.status === 'held' ? html`${steps(1)}<div class="status-hero wait"><div class="icon">${icon('clock')}</div><h1>Finish your booking</h1><p class="muted">Your slot is held while you pay.</p>
           <a class="btn primary" href="#/checkout/${b.id}">Continue to payment</a></div>`
-      : b.status === 'confirmed' ? html`${query.get('paying') ? steps(3) : ''}<div class="status-hero"><div class="icon">${icon('check')}</div><h1>${query.get('paying') ? "You're booked!" : 'Your booking'}</h1>
+      : b.status === 'confirmed' ? html`${query.get('paying') ? steps(3) : ''}<div class="status-hero ${query.get('paying') ? 'celebrate' : ''}"><div class="icon">${icon('check')}</div><h1>${query.get('paying') ? "You're booked!" : 'Your booking'}</h1>
           <p class="muted">Show this QR code at the front desk when you arrive.</p></div>`
       : b.status === 'completed' ? html`<div class="status-hero"><div class="icon">${icon('star')}</div><h1>Hope you had a great game</h1></div>`
       : b.status === 'cancelled' ? html`<div class="status-hero bad"><div class="icon">${icon('x')}</div><h1>Booking cancelled</h1>${b.cancelReason ? html`<p class="muted">${b.cancelReason}</p>` : ''}</div>`
@@ -394,8 +362,13 @@ export async function bookingView(main, { id }, query) {
           <p class="muted">${b.status === 'failed' ? `You weren't charged${b.payment?.status === 'refunded' ? ' — any amount taken has been refunded' : ''}. The slot was released.` : 'The slot was released because payment was not completed in time.'}</p>
           <a class="btn primary" href="#/venue/${b.venue.slug}?date=${b.date}&sport=${b.sport}">Pick another slot</a></div>`}
       <div class="grid-2" style="align-items:start">
-        ${qr ? html`<div class="ticket">${raw(qrSvg(b.ref, 200))}<div class="ref">${b.ref}</div><div class="faint">Booking reference</div>${statusTag(b.status)}
-          ${b.checkedInAt ? html`<span class="tag good">${icon('check')}Checked in ${fmtDateTime(b.checkedInAt)}</span>` : ''}</div>` : ''}
+        ${qr && b.session?.mode === 'online' ? joinCard(b) : ''}
+        ${qr && b.session?.mode !== 'online' ? html`<div class="ticket">
+          <div class="ticket-top"><div class="ticket-sport">${SPORT_ICON[b.sport] || ''} ${sportLabel(b.sport).replace(/^\S+ /, '')}</div><h2>${b.venue.name}</h2>
+            <div class="ticket-when">${fmtLongDate(b.date)}</div><div class="ticket-time">${fmtRange(b.startTime, b.endTime)}</div><div class="ticket-court">${b.court.name}</div></div>
+          <div class="ticket-tear" aria-hidden="true"></div>
+          <div class="ticket-bottom">${raw(qrSvg(b.ref, 180))}<div class="ref">${b.ref}</div><div class="faint">Show this at the front desk</div>${statusTag(b.status)}
+            ${b.checkedInAt ? html`<span class="tag good">${icon('check')}Checked in ${fmtDateTime(b.checkedInAt)}</span>` : ''}</div></div>` : ''}
         <div class="stack">
           <div class="card">${summary(b)}<hr><dl class="kv"><dt>Status</dt><dd>${statusTag(b.status)}</dd><dt>Amount</dt><dd>${money(b.amount)}</dd>
             ${b.payment ? html`<dt>Payment</dt><dd>${titleCase(b.payment.status)}</dd>` : ''}${b.source === 'manual' ? html`<dt>Paid at</dt><dd>Venue (${titleCase(b.offlineMethod)})</dd>` : ''}
@@ -403,6 +376,7 @@ export async function bookingView(main, { id }, query) {
           ${qr ? html`<div class="row">
             <a class="btn small" href="${mapsUrl(b.venue)}" target="_blank" rel="noopener">${icon('map')}Directions</a>
             ${b.status === 'confirmed' ? html`<button class="btn small" id="ics">${icon('calendar')}Add to calendar</button>` : ''}
+            ${b.status === 'confirmed' && navigator.share ? html`<button class="btn small" id="share-team">${icon('ext')}Share with team</button>` : ''}
             <a class="btn small" href="#/invoice/${b.id}">${icon('download')}Invoice</a>
             ${b.venue.phone ? html`<a class="btn small" href="tel:${b.venue.phone.replace(/\s/g, '')}">${icon('phone')}Call venue</a>` : ''}</div>` : ''}
           ${b.refundQuote ? html`<div class="card"><h3>Need to cancel?</h3><p class="muted">${b.refundQuote.percent === 100 ? `Cancel now for a full refund of ${money(b.refundQuote.amount)}.`
@@ -420,6 +394,11 @@ export async function bookingView(main, { id }, query) {
             <a class="btn small ghost" href="#/support/new?booking=${b.id}">${icon('chat')}Get help</a></div>
         </div>
       </div>`);
+    if (b.status === 'confirmed' && query.get('paying') && !celebrated) { celebrated = true; confetti(); navigator.vibrate?.([40, 60, 40]); }
+    $('#share-team', main)?.addEventListener('click', () => navigator.share({
+      title: `${sportLabel(b.sport).replace(/^\S+ /, '')} at ${b.venue.name}`,
+      text: `Game on! ${b.venue.name}, ${fmtLongDate(b.date)}, ${fmtRange(b.startTime, b.endTime)}. ${mapsUrl(b.venue)}`,
+    }).catch(() => {}));
     $('#ics', main)?.addEventListener('click', () => downloadFile(`turfconnect-${b.ref}.ics`, ics(b), 'text/calendar'));
     $('#cancel', main)?.addEventListener('click', async () => {
       const reason = await confirmDialog(b.refundQuote.amount ? `You'll get ${money(b.refundQuote.amount)} back to your original payment method in 5–7 working days.` : 'You will not get a refund for this cancellation.',

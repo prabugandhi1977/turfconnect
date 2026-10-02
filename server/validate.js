@@ -47,8 +47,10 @@ export function weekdays(value, name = 'Days') {
   if (!/^[0-6]{1,7}$/.test(v) || new Set(v).size !== v.length) bad(`${name} must list weekdays 0 (Sun) to 6 (Sat)`);
   return [...v].sort().join('');
 }
-export const SPORTS = ['football', 'cricket', 'badminton', 'tennis', 'pickleball', 'basketball', 'volleyball', 'futsal'];
-export const SURFACES = ['artificial_grass', 'natural_grass', 'synthetic', 'wooden', 'hard_court', 'clay', 'concrete'];
+export const SPORTS = ['football', 'cricket', 'badminton', 'tennis', 'pickleball', 'basketball', 'volleyball', 'futsal', 'swimming'];
+export const SURFACES = ['artificial_grass', 'natural_grass', 'synthetic', 'wooden', 'hard_court', 'clay', 'concrete', 'pool'];
+export const WELLNESS_KINDS = ['yoga', 'meditation', 'zumba', 'fitness', 'aqua', 'pilates', 'breathwork'];
+export const COACH_SPECIALTIES = [...new Set([...SPORTS, ...WELLNESS_KINDS])];
 export const AMENITIES = ['parking', 'washroom', 'changing_room', 'drinking_water', 'first_aid', 'cafeteria', 'seating', 'equipment_rental', 'showers', 'wifi', 'cctv', 'floodlights'];
 export function sportList(value) {
   if (!Array.isArray(value) || !value.length) bad('Pick at least one sport');

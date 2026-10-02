@@ -8,7 +8,7 @@ import { audit } from '../audit.js';
 import { notify } from '../notify.js';
 
 // Replays the stored response when a client retries with the same Idempotency-Key (e.g. after a network drop).
-function idempotent(u, req, scope, fn) {
+export function idempotent(u, req, scope, fn) {
   const key = req.headers['idempotency-key'];
   if (!key) return reply(201, fn());
   if (key.length > 100) bad('Idempotency-Key is too long');
@@ -25,7 +25,7 @@ export default function bookingRoutes(r) {
     return idempotent(u, req, 'hold', () => createHold(u, {
       venueId: str(body.venueId, 'Venue', { min: 1, max: 64 }), courtId: str(body.courtId, 'Court', { min: 1, max: 64 }),
       date: dateOf(body.date), starts: body.starts, sport: oneOf(body.sport || null, 'Sport', SPORTS, { optional: true }),
-      couponCode: str(body.couponCode, 'Promo code', { max: 40, optional: true }),
+      couponCode: str(body.couponCode, 'Promo code', { max: 40, optional: true }), coachId: str(body.coachId, 'Coach', { max: 64, optional: true }) || null,
     }));
   });
 
@@ -60,8 +60,12 @@ export default function bookingRoutes(r) {
   r.post('/bookings/:id/review', ({ u, params, body }) => {
     const b = loadOwnBooking(u, params.id);
     if (b.status !== 'completed') conflict('You can review a venue after your game');
-    if (one('SELECT 1 FROM reviews WHERE booking_id=?', b.id)) conflict('You already reviewed this booking');
+    if (one('SELECT 1 FROM reviews WHERE booking_id=?', b.id) || one('SELECT 1 FROM coach_reviews WHERE booking_id=?', b.id)) conflict('You already reviewed this booking');
     const review = { id: id(), rating: int(body.rating, 'Rating', { min: 1, max: 5 }), comment: str(body.comment, 'Comment', { max: 1000, optional: true }) };
+    if (b.coach_id) {
+      run('INSERT INTO coach_reviews (id,coach_id,booking_id,customer_id,rating,comment,created_at) VALUES (?,?,?,?,?,?,?)', review.id, b.coach_id, b.id, u.id, review.rating, review.comment, now());
+      return reply(201, review);
+    }
     run('INSERT INTO reviews (id,venue_id,booking_id,customer_id,rating,comment,created_at) VALUES (?,?,?,?,?,?,?)', review.id, b.venue_id, b.id, u.id, review.rating, review.comment, now());
     audit(u.id, 'review.created', 'review', review.id, { venueId: b.venue_id, rating: review.rating });
     return reply(201, review);

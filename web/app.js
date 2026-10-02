@@ -1,5 +1,12 @@
-import { $, $$, api, busy, clearSession, confirmDialog, currentPath, empty, fmtDateTime, go, html, icon, liveStream, mount, resolveRoute, route, session, setMe, setSession, skeleton, state, store, toast } from './lib.js';
-import { discoverView, venueView, checkoutView, payView, bookingView, bookingsView, invoiceView } from './views/customer.js';
+import { sheet, $, $$, api, busy, clearSession, confirmDialog, currentPath, empty, fmtDateTime, go, html, icon, liveStream, mount, resolveRoute, route, session, setMe, setSession, skeleton, state, store, toast } from './lib.js';
+import { wellnessView, sessionDetailView } from './views/wellness.js';
+import { vendingListView, machineView, orderView } from './views/vending.js';
+import { coachesView, coachProfileView } from './views/coaches.js';
+import { initChat } from './chat.js';
+import { blogListView, blogPostView, questionsView, questionDetailView } from './views/community.js';
+import { homeView, gameView } from './views/turf.js';
+import { galleryView } from './views/gallery.js';
+import { venueView, checkoutView, payView, bookingView, bookingsView, invoiceView } from './views/customer.js';
 import { supportListView, supportNewView, supportThreadView } from './views/support.js';
 import { ownerHome, ownerNew, ownerConsole } from './views/owner.js';
 import { adminConsole } from './views/admin.js';
@@ -11,11 +18,26 @@ function applyTheme(t = store.get('tc.theme', 'system')) {
 applyTheme();
 
 // ---- Shell -----------------------------------------------------------------------------------------------------
-const NAV = [['#/', 'search', 'Discover', p => p === '/' || p.startsWith('/venue')], ['#/bookings', 'ticket', 'Bookings', p => /^\/(bookings|booking|checkout|pay|invoice)/.test(p)],
-  ['#/support', 'chat', 'Help', p => p.startsWith('/support')], ['#/profile', 'user', 'Profile', p => /^\/(profile|login|notifications)/.test(p)]];
+// Main navigation: an icon rail on desktop, a bottom bar on phones. "sec" items move into the More sheet on phones.
+const NAV = [
+  ['#/', 'home', 'Home', p => p === '/' || p.startsWith('/game') || p.startsWith('/venue')],
+  ['#/wellness', 'bulb', 'Wellness', p => p.startsWith('/wellness') || p.startsWith('/session')],
+  ['#/coaches', 'users', 'Coaches', p => p.startsWith('/coach')],
+  ['#/vending', 'cup', 'Snacks', p => p.startsWith('/vending') || p.startsWith('/order'), true],
+  ['#/blog', 'book', 'Learn', p => p.startsWith('/blog') || p.startsWith('/questions') || p.startsWith('/gallery'), true],
+  ['#/bookings', 'ticket', 'Bookings', p => /^\/(bookings|booking|checkout|pay|invoice)/.test(p)],
+  ['#/support', 'chat', 'Help', p => p.startsWith('/support'), true],
+  ['#/profile', 'user', 'Profile', p => /^\/(profile|login|notifications)/.test(p), true],
+];
 let unread = 0;
 function renderShell(path = currentPath().path) {
-  mount($('#nav'), NAV.map(([href, ic, label, match]) => html`<a href="${href}" ${match(path) ? html`aria-current="page"` : ''}>${icon(ic)}<span>${label}</span></a>`));
+  const moreActive = NAV.some(([, , , match, sec]) => sec && match(path));
+  mount($('#nav'), html`${NAV.map(([href, ic, label, match, sec]) => html`<a href="${href}" class="${sec ? 'sec' : ''}" title="${label}" ${match(path) ? html`aria-current="page"` : ''}>${icon(ic)}<span>${label}</span></a>`)}
+    <button type="button" class="more-btn" aria-haspopup="dialog" ${moreActive ? html`aria-current="page"` : ''}>${icon('grid')}<span>More</span></button>`);
+  $('#nav .more-btn').onclick = () => sheet({
+    title: 'More', body: html`<div class="list">${NAV.filter(n => n[4]).map(([href, ic, label]) => html`<a class="list-item" href="${href}" data-go><span class="machine-ico" aria-hidden="true">${icon(ic)}</span><div class="grow"><div class="title">${label}</div></div></a>`)}</div>`,
+    onMount: (el, close) => el.addEventListener('click', e => { if (e.target.closest('[data-go]')) close(); }),
+  });
   const me = state.me;
   const business = me && (me.venues?.length || me.role === 'owner');
   mount($('#topbar-actions'), html`
@@ -201,8 +223,22 @@ async function notificationsView(main) {
 }
 
 // ---- Routes ----------------------------------------------------------------------------------------------------
-route('/', discoverView, { keepScroll: false });
-route('/venue/:slug', venueView);
+route('/', homeView, { keepScroll: false, wide: true });
+route('/game/:sport', gameView, { wide: true });
+route('/gallery', galleryView, { title: 'Photos & videos' });
+// Older links to the venue page land on the matching game, or the home page.
+route('/venue/:slug', (main, _p, q) => go(q.get('sport') ? `#/game/${q.get('sport')}${q.get('date') ? '?date=' + q.get('date') : ''}` : '#/', { replace: true }));
+route('/wellness', wellnessView, { keepScroll: false, title: 'Wellness classes' });
+route('/session/:id', sessionDetailView);
+route('/blog', blogListView, { title: 'Blog' });
+route('/blog/:slug', blogPostView);
+route('/questions', questionsView, { title: 'Questions & answers' });
+route('/questions/:id', questionDetailView);
+route('/coaches', coachesView, { title: 'Coaches' });
+route('/coach/:id', coachProfileView);
+route('/vending', vendingListView, { title: 'Snacks & coffee' });
+route('/vending/:id', machineView);
+route('/order/:id', orderView, { auth: true, title: 'Your order' });
 route('/login', loginView, { title: 'Sign in' });
 route('/checkout/:id', checkoutView, { auth: true, title: 'Checkout' });
 route('/pay/:intent', payView, { auth: true, title: 'Payment' });
@@ -223,6 +259,7 @@ route('/admin/:tab', adminConsole, { auth: true, wide: true, title: 'Admin' });
 route('/404', main => mount(main, empty('map', 'Page not found', 'That link does not lead anywhere.', html`<a class="btn primary" href="#/">Find a turf</a>`)), { fallback: true });
 
 window.addEventListener('hashchange', resolveRoute);
+initChat();
 const syncOnline = () => { $('#offline').hidden = navigator.onLine; };
 window.addEventListener('online', syncOnline); window.addEventListener('offline', syncOnline); syncOnline();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

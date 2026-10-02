@@ -1,8 +1,9 @@
 // Platform admin: venue verification and suspension, support and disputes, payouts, review moderation and audit log.
-import { $, api, busy, confirmDialog, empty, errorView, fmtDate, fmtDateTime, go, html, icon, money, mount, on, raw, skeleton, state, titleCase, toast, todayIn, addDays } from '../lib.js';
+import { $, api, busy, confirmDialog, empty, errorView, fmtDate, fmtDateTime, go, html, icon, money, mount, on, plural, raw, sheet, skeleton, state, titleCase, toast, todayIn, addDays } from '../lib.js';
+import { answerForm, questionCard } from './community.js';
 import { ticketList } from './support.js';
 
-const TABS = [['overview', 'Overview', 'home'], ['venues', 'Venues', 'building'], ['support', 'Support & disputes', 'chat'], ['payouts', 'Payouts', 'cash'], ['audit', 'Audit log', 'shield']];
+const TABS = [['overview', 'Overview', 'home'], ['venues', 'Venues', 'building'], ['support', 'Support & disputes', 'chat'], ['payouts', 'Payouts', 'cash'], ['blog', 'Blog', 'star'], ['moderation', 'Q&A moderation', 'chat'], ['audit', 'Audit log', 'shield']];
 const kpi = (k, v, s = '') => html`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>${s ? html`<div class="s">${s}</div>` : ''}</div>`;
 function repaint(ctx, fn) { const n = ctx.pane.cloneNode(false); ctx.pane.replaceWith(n); ctx.pane = n; return fn(ctx); }
 
@@ -84,4 +85,50 @@ async function audit({ pane }) {
       <td style="white-space:normal;min-width:260px;font-size:12px;font-family:ui-monospace,monospace">${Object.entries(a.details).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ').slice(0, 300)}</td></tr>`)}</tbody></table></div>`);
 }
 
-const PANES = { overview, venues, support, payouts, audit };
+// ---- Blog editor ------------------------------------------------------------------------------------------------------
+const POST_CATS = [['tips', 'Game-day tips'], ['fitness', 'Fitness'], ['wellness', 'Wellness'], ['venues', 'Venues'], ['news', 'News']];
+async function blog(ctx) {
+  const { pane } = ctx, list = await api('/admin/blog');
+  mount(pane, html`<div class="row between"><p class="muted" style="margin:0">Articles players read at <a href="#/blog">/blog</a>. Drafts stay private until you publish.</p><button class="btn primary" id="new">${icon('plus')}New article</button></div>
+    <div class="section">${list.length ? html`<div class="table-wrap"><table><thead><tr><th>Article</th><th>Category</th><th>Status</th><th class="num">Views</th><th>Updated</th><th></th></tr></thead><tbody>
+      ${list.map(p => html`<tr><td style="white-space:normal;min-width:240px"><b>${p.title}</b><div class="faint">${p.readingMinutes} min read</div></td><td>${titleCase(p.category)}</td>
+        <td><span class="tag ${p.status === 'published' ? 'good' : 'warn'}">${p.status === 'published' ? 'Published' : 'Draft'}</span></td><td class="num">${p.views}</td><td>${fmtDate(p.updatedAt.slice(0, 10))}</td>
+        <td style="white-space:nowrap"><button class="btn small" data-edit="${p.id}">Edit</button> ${p.status === 'published' ? html`<a class="btn small ghost" href="#/blog/${p.slug}">View</a>` : ''}</td></tr>`)}</tbody></table></div>` : empty('chat', 'No articles', 'Write the first one.')}</div>`);
+  const editor = (p = null) => sheet({
+    title: p ? 'Edit article' : 'New article', wide: true,
+    body: html`<form id="pf"><div class="grid-2"><div class="field"><label for="p-title">Title</label><input id="p-title" name="title" required maxlength="120" value="${p?.title || ''}"></div>
+      <div class="field"><label for="p-cat">Category</label><select id="p-cat" name="category">${POST_CATS.map(([v, l]) => html`<option value="${v}" ${p?.category === v ? 'selected' : ''}>${l}</option>`)}</select></div></div>
+      <div class="field"><label for="p-sum">Summary (shown on cards)</label><input id="p-sum" name="summary" maxlength="300" value="${p?.summary || ''}"></div>
+      <div class="field"><label for="p-body">Article</label><textarea id="p-body" name="body" rows="14" style="min-height:260px">${p?.body || ''}</textarea>
+        <div class="hint">Separate paragraphs with a blank line. Use <code>## Heading</code>, lines starting with <code>- </code> for bullets, and <code>**bold**</code>.</div></div>
+      <div class="field"><label for="p-status">Status</label><select id="p-status" name="status"><option value="draft" ${p?.status !== 'published' ? 'selected' : ''}>Draft (private)</option><option value="published" ${p?.status === 'published' ? 'selected' : ''}>Published</option></select></div>
+      <p class="form-error" id="p-err" role="alert"></p></form>`,
+    foot: html`${p ? html`<button class="btn danger" id="p-del">Delete</button><span style="flex:1"></span>` : ''}<button class="btn" data-close>Back</button><button class="btn primary" id="p-go">Save</button>`,
+    onMount: (el, close) => {
+      $('#p-go', el).onclick = e => busy(e.currentTarget, async () => {
+        try { await api(p ? `/admin/blog/${p.id}` : '/admin/blog', { method: p ? 'PATCH' : 'POST', body: Object.fromEntries(new FormData($('#pf', el)).entries()) }); close(); toast('Saved'); repaint(ctx, blog); }
+        catch (err) { $('#p-err', el).textContent = err.message; }
+      });
+      $('#p-del', el)?.addEventListener('click', async () => { if (!(await confirmDialog('This permanently removes the article.', { title: 'Delete this article?', confirmLabel: 'Delete', danger: true }))) return; await api(`/admin/blog/${p.id}`, { method: 'DELETE' }); close(); toast('Deleted'); repaint(ctx, blog); });
+    },
+  });
+  $('#new', pane).onclick = () => editor();
+  on(pane, 'click', '[data-edit]', (_e, b) => editor(list.find(x => x.id === b.dataset.edit)));
+}
+
+// ---- Q&A moderation ------------------------------------------------------------------------------------------------------
+async function moderation(ctx) {
+  const { pane } = ctx, { flagged, unanswered } = await api('/admin/qa');
+  mount(pane, html`<h2>General questions waiting for an answer</h2>
+    ${unanswered.length ? html`<div class="stack">${unanswered.map(q => questionCard(q))}</div>` : html`<p class="muted">All caught up.</p>`}
+    <h2 class="section">Reported or hidden</h2>
+    ${flagged.length ? html`<div class="list">${flagged.map(f => html`<div class="list-item"><div class="grow"><div class="title" style="white-space:normal">${f.text}</div><div class="faint">${titleCase(f.type)}${f.by ? ' by ' + f.by : ''} · ${plural(f.reports, 'report')} · ${f.hidden ? 'Hidden' : 'Visible'}</div></div>
+      <button class="btn small ${f.hidden ? '' : 'danger'}" data-hide="${f.type}:${f.id}:${f.hidden ? 'show' : 'hide'}">${f.hidden ? 'Restore' : 'Hide'}</button></div>`)}</div>` : html`<p class="muted">Nothing has been reported.</p>`}`);
+  for (const q of unanswered) $(`[data-q="${q.id}"]`, pane)?.append(answerForm(q, () => repaint(ctx, moderation)));
+  on(pane, 'click', '[data-hide]', async (_e, b) => {
+    const [type, id, action] = b.dataset.hide.split(':');
+    try { await api(`/admin/qa/${type}/${id}/hide`, { method: 'POST', body: { hidden: action === 'hide' } }); toast(action === 'hide' ? 'Hidden' : 'Restored'); repaint(ctx, moderation); } catch (e) { toast(e.message, 'bad'); }
+  });
+}
+
+const PANES = { overview, venues, support, payouts, blog, moderation, audit };

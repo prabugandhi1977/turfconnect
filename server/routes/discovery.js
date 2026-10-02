@@ -4,7 +4,7 @@ import { venueDay, venueSummary, isBookable } from '../availability.js';
 import { venueToday, daysBetween } from '../time.js';
 import { venueRole, verifyToken } from '../security.js';
 import { subscribe } from '../events.js';
-import { AMENITIES, SPORTS, SURFACES, date as dateOf, time as timeOf, num, oneOf, bool, notFound, bad } from '../validate.js';
+import { AMENITIES, COACH_SPECIALTIES, SPORTS, SURFACES, WELLNESS_KINDS, date as dateOf, time as timeOf, num, oneOf, bool, notFound, bad } from '../validate.js';
 
 const R = 6371;
 export function distanceKm(lat1, lng1, lat2, lng2) {
@@ -26,9 +26,37 @@ export function publicVenue(v) {
   };
 }
 
+// One-turf mode: TURF_VENUE_SLUG, or the first active venue.
+export function primaryVenue() {
+  return (process.env.TURF_VENUE_SLUG && one("SELECT * FROM venues WHERE slug=? AND status='active'", process.env.TURF_VENUE_SLUG)) || one("SELECT * FROM venues WHERE status='active' ORDER BY rowid LIMIT 1");
+}
+
 export default function discoveryRoutes(r) {
-  r.get('/meta', () => ({ sports: SPORTS, surfaces: SURFACES, amenities: AMENITIES, currency: config.currency, devOtp: config.devOtp, paymentProvider: config.paymentProvider,
+  r.get('/meta', () => ({ sports: SPORTS, wellnessKinds: WELLNESS_KINDS, coachSpecialties: COACH_SPECIALTIES, surfaces: SURFACES, amenities: AMENITIES, currency: config.currency, devOtp: config.devOtp, paymentProvider: config.paymentProvider,
     cities: all("SELECT city, AVG(lat) AS lat, AVG(lng) AS lng, COUNT(*) AS venues FROM venues WHERE status='active' GROUP BY city ORDER BY venues DESC") }), { auth: 'none' });
+
+  // How many venues have a bookable slot on a date, overall and per game. Feeds the count badges in the games menu.
+  r.get('/sports/availability', ({ query }) => {
+    const date = dateOf(query.get('date'));
+    const sports = Object.fromEntries(SPORTS.map(s => [s, 0]));
+    let any = 0;
+    for (const row of all("SELECT * FROM venues WHERE status='active'")) {
+      const open = sp => venueDay(row, date, { sport: sp }).some(c => c.slots.some(s => isBookable(s.state)));
+      const offered = publicVenue(row).sports.filter(open);
+      for (const sp of offered) sports[sp]++;
+      if (offered.length) any++;
+    }
+    return { date, any, sports };
+  }, { auth: 'none' });
+
+  // One-turf mode: the app opens on this venue (TURF_VENUE_SLUG, or the first active venue).
+  r.get('/site', () => {
+    const row = primaryVenue();
+    if (!row) notFound('No venue is open yet');
+    const v = publicVenue(row);
+    return { venue: { id: v.id, name: v.name, slug: v.slug, description: v.description, address: v.address, city: v.city, phone: v.phone, openTime: v.openTime, closeTime: v.closeTime, photos: v.photos, amenities: v.amenities, sports: v.sports, lat: v.lat, lng: v.lng, rating: v.rating, reviews: v.reviews },
+      games: v.sports.map(sport => ({ sport, courts: v.courts.filter(c => c.sports.includes(sport)).length, fromPrice: Math.min(...v.courts.filter(c => c.sports.includes(sport)).map(c => c.base_price)) })) };
+  }, { auth: 'none' });
 
   r.get('/venues', ({ query }) => {
     const q = Object.fromEntries(query);

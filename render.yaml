@@ -24,5 +24,8 @@ services:
         value: "true"
       - key: TURF_SEED_DEMO
         value: "true"
+      # Demo only: keeps the seeded machines, gates and cameras reporting, and enables the "try it without hardware" tools.
+      - key: TURF_VENDING_SIM
+        value: "true"
       - key: TURF_COMMISSION_PERCENT
         value: "10"

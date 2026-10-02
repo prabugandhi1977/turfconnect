@@ -11,6 +11,7 @@ import { confirmBooking, failBooking, issueRefund, money } from './bookings.js';
 import { notify } from './notify.js';
 import { publishUser, publishVenue } from './events.js';
 import { audit } from './audit.js';
+import { confirmOrderPaid, failOrderPayment, refundOrder } from './vending.js';
 
 const SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000;
 let selfBaseUrl = `http://127.0.0.1:${config.port}`;
@@ -27,6 +28,7 @@ const provider = () => {
   if (!p) throw new Error(`Payment provider "${config.paymentProvider}" is not implemented`);
   return p;
 };
+export const createIntent = o => provider().createIntent(o);
 export const refundPayment = (payment, amount) => payment.provider === 'free' || payment.provider === 'sandbox' ? providers.sandbox.refund(payment, amount) : provider().refund(payment, amount);
 
 export function startPayment(user, booking) {
@@ -64,12 +66,15 @@ export function handleWebhook(raw, signature) {
   if (!verifySignature(signature, raw)) throw new HttpError(401, 'Invalid webhook signature');
   let event; try { event = JSON.parse(raw); } catch { bad('Invalid JSON'); }
   if (!event?.id || !event?.type) bad('Malformed event');
-  const touched = [];
+  const touched = [], touchedOrders = [];
   const result = transaction(() => {
     if (one('SELECT 1 FROM webhook_events WHERE event_id=?', event.id)) return { received: true, duplicate: true };
     run('INSERT INTO webhook_events (event_id,type,received_at) VALUES (?,?,?)', event.id, event.type, now());
     const payment = one('SELECT * FROM payments WHERE intent_id=?', event.data?.intentId);
-    if (!payment) return { received: true, ignored: 'unknown intent' };
+    if (!payment) {
+      const op = one('SELECT * FROM order_payments WHERE intent_id=?', event.data?.intentId);
+      return op ? handleOrderEvent(event, op, touchedOrders) : { received: true, ignored: 'unknown intent' };
+    }
     const b = one('SELECT * FROM bookings WHERE id=?', payment.booking_id);
     touched.push(b);
     if (event.type === 'payment_intent.succeeded') {
@@ -105,13 +110,39 @@ export function handleWebhook(raw, signature) {
     const status = one('SELECT status FROM bookings WHERE id=?', b.id).status;
     publishUser(b.customer_id, 'booking', { id: b.id, status });
   }
+  for (const o of touchedOrders) publishUser(o.customer_id, 'order', { id: o.id, status: one('SELECT status FROM vending_orders WHERE id=?', o.id).status });
   return result;
+}
+
+// Vending order payments: same signed webhook, same amount check; stock that vanished before payment cleared is refunded.
+function handleOrderEvent(event, op, touchedOrders) {
+  const o = one('SELECT * FROM vending_orders WHERE id=?', op.order_id);
+  touchedOrders.push(o);
+  if (event.type === 'payment_intent.succeeded') {
+    if (op.status === 'succeeded') return { received: true };
+    if (event.data.amount !== op.amount) {
+      run("UPDATE order_payments SET status='failed', updated_at=? WHERE id=?", now(), op.id);
+      audit(null, 'payment.amount_mismatch', 'order_payment', op.id, { venueId: o.venue_id, expected: op.amount, got: event.data.amount });
+      return { received: true, error: 'amount mismatch' };
+    }
+    run("UPDATE order_payments SET status='succeeded', updated_at=? WHERE id=?", now(), op.id);
+    const confirmed = confirmOrderPaid(o.id);
+    if (!confirmed.ok) refundOrder(one('SELECT * FROM vending_orders WHERE id=?', o.id), { reason: 'Items sold out before your payment cleared.' });
+    return { received: true, confirmed: confirmed.ok };
+  }
+  if (event.type === 'payment_intent.payment_failed') {
+    run("UPDATE order_payments SET status='failed', updated_at=? WHERE id=?", now(), op.id);
+    failOrderPayment(o.id);
+    return { received: true };
+  }
+  return { received: true, ignored: event.type };
 }
 
 // ---- Sandbox checkout ----------------------------------------------------------------------------------------
 export async function completeSandboxCheckout(user, intentId, outcome) {
   if (config.paymentProvider !== 'sandbox') notFound();
-  const payment = one('SELECT p.*, b.customer_id FROM payments p JOIN bookings b ON b.id=p.booking_id WHERE p.intent_id=?', intentId);
+  const payment = one('SELECT p.*, b.customer_id FROM payments p JOIN bookings b ON b.id=p.booking_id WHERE p.intent_id=?', intentId)
+    || one('SELECT p.*, o.customer_id FROM order_payments p JOIN vending_orders o ON o.id=p.order_id WHERE p.intent_id=?', intentId);
   if (!payment || payment.customer_id !== user.id) notFound('Payment not found');
   if (payment.status !== 'requires_payment') conflict('This payment is already finished');
   const body = JSON.stringify({
@@ -127,6 +158,12 @@ export async function completeSandboxCheckout(user, intentId, outcome) {
 export function sandboxIntent(user, intentId) {
   const p = one(`SELECT p.intent_id, p.amount, p.currency, p.status, b.id AS booking_id, b.ref, b.customer_id, b.hold_expires_at, v.name AS venue
                  FROM payments p JOIN bookings b ON b.id=p.booking_id JOIN venues v ON v.id=b.venue_id WHERE p.intent_id=?`, intentId);
-  if (!p || p.customer_id !== user.id) notFound('Payment not found');
+  if (!p) {
+    const q = one(`SELECT p.intent_id, p.amount, p.currency, p.status, o.id AS order_id, o.ref, o.customer_id, o.hold_expires_at, v.name AS venue, m.name AS machine
+                   FROM order_payments p JOIN vending_orders o ON o.id=p.order_id JOIN venues v ON v.id=o.venue_id JOIN vending_machines m ON m.id=o.machine_id WHERE p.intent_id=?`, intentId);
+    if (!q || q.customer_id !== user.id) notFound('Payment not found');
+    return { intentId: q.intent_id, amount: q.amount, currency: q.currency, status: q.status, orderId: q.order_id, ref: q.ref, venue: `${q.venue} · ${q.machine}`, holdExpiresAt: q.hold_expires_at };
+  }
+  if (p.customer_id !== user.id) notFound('Payment not found');
   return { intentId: p.intent_id, amount: p.amount, currency: p.currency, status: p.status, bookingId: p.booking_id, ref: p.ref, venue: p.venue, holdExpiresAt: p.hold_expires_at };
 }

@@ -5,13 +5,15 @@ import {
   plural, policyText, raw, setMe, sheet, skeleton, sportLabel, state, store, titleCase, toast, addDays, WEEKDAYS, weekdaysLabel,
 } from '../lib.js';
 import { ticketList } from './support.js';
+import { MACHINE_ICON, statusPill } from './vending.js';
+import { answerForm, questionCard } from './community.js';
 
 const LEVEL = { front_desk: 1, manager: 2, owner: 3, admin: 4 };
 const can = (role, min) => LEVEL[role] >= LEVEL[min];
 const TABS = [
   ['overview', 'Overview', 'home', 'front_desk'], ['calendar', 'Calendar', 'calendar', 'front_desk'], ['bookings', 'Bookings', 'list', 'front_desk'],
   ['checkin', 'Check-in', 'qr', 'front_desk'], ['customers', 'Customers', 'users', 'front_desk'], ['support', 'Messages', 'chat', 'front_desk'],
-  ['reviews', 'Reviews', 'star', 'front_desk'], ['pricing', 'Pricing & hours', 'tag', 'manager'], ['coupons', 'Promo codes', 'gift', 'manager'],
+  ['reviews', 'Reviews', 'star', 'front_desk'], ['sessions', 'Wellness classes', 'bulb', 'manager'], ['vending', 'Vending machines', 'cash', 'manager'], ['surveillance', 'Surveillance', 'camera', 'front_desk'], ['access', 'Access & security', 'shield', 'front_desk'], ['media', 'Photos & videos', 'star', 'manager'], ['coaches', 'Coaches', 'users', 'manager'], ['questions', 'Questions', 'chat', 'manager'], ['pricing', 'Pricing & hours', 'tag', 'manager'], ['coupons', 'Promo codes', 'gift', 'manager'],
   ['refunds', 'Refunds', 'wallet', 'manager'], ['reports', 'Reports', 'chart', 'manager'], ['settings', 'Venue setup', 'settings', 'manager'],
   ['staff', 'Staff', 'users', 'owner'], ['payouts', 'Payouts', 'cash', 'owner'], ['audit', 'Audit log', 'shield', 'owner'],
 ];
@@ -416,6 +418,463 @@ async function couponsPane(ctx) {
   });
 }
 
+async function sessionsPane(ctx) {
+  const { vid, venue, pane } = ctx;
+  const [list, meta] = await Promise.all([api(`/owner/venues/${vid}/sessions`), state.meta ? state.meta : api('/meta').then(m => (state.meta = m))]);
+  const upcoming = list.filter(s => s.endAt > Date.now());
+  mount(pane, html`<div class="row between"><p class="muted" style="margin:0">Yoga, meditation, fitness and aqua classes, in person or online. Players book a seat and pay at checkout.</p>
+    <button class="btn primary" id="new">${icon('plus')}New class</button></div>
+    <div class="section">${upcoming.length ? html`<div class="table-wrap"><table><thead><tr><th>When</th><th>Class</th><th>Format</th><th class="num">Seats</th><th class="num">Price</th><th>Status</th><th></th></tr></thead><tbody>
+      ${upcoming.map(s => html`<tr><td>${fmtDate(s.date)}<div class="faint">${fmtRange(s.startTime, s.endTime)}</div></td><td><b>${s.title}</b><div class="faint">${titleCase(s.kind)}${s.trainer ? ' · ' + s.trainer : ''}</div></td>
+        <td>${s.mode === 'online' ? 'Online' : 'In person'}</td><td class="num">${s.seatsTaken} / ${s.capacity}</td><td class="num">${s.price ? money(s.price) : 'Free'}</td>
+        <td>${s.status === 'cancelled' ? html`<span class="tag bad">Cancelled</span>` : html`<span class="tag good">Scheduled</span>`}</td>
+        <td class="nowrap"><button class="btn small" data-people="${s.id}">Attendees</button> ${s.status === 'scheduled' ? html`<button class="btn small danger" data-cancel="${s.id}">Cancel</button>` : ''}</td></tr>`)}</tbody></table></div>`
+      : empty('bulb', 'No classes scheduled', 'Add your first class so players can book a seat.')}</div>`);
+  on(pane, 'click', '[data-people]', async (_e, b) => {
+    const s = list.find(x => x.id === b.dataset.people), people = await api(`/owner/venues/${vid}/sessions/${s.id}/attendees`);
+    sheet({ title: s.title, body: people.length ? html`<div class="list">${people.map(p => html`<div class="list-item"><div class="grow"><div class="title">${p.name || 'Player'}</div><div class="faint">${p.ref} · ${p.phone || 'no phone'}</div></div>${statusTag(p.status)}</div>`)}</div>`
+      : html`<p class="muted">No seats booked yet.</p>` });
+  });
+  on(pane, 'click', '[data-cancel]', async (_e, b) => {
+    const s = list.find(x => x.id === b.dataset.cancel);
+    const reason = await confirmDialog(`${plural(s.seatsTaken, 'booked seat')} will be cancelled and refunded in full, and players are notified.`, { title: 'Cancel this class?', confirmLabel: 'Cancel class', danger: true, input: { label: 'Reason (shown to players)', placeholder: 'e.g. Trainer unwell' } });
+    if (reason === null) return;
+    try { const r = await api(`/owner/venues/${vid}/sessions/${s.id}/cancel`, { method: 'POST', body: { reason } }); toast(`Class cancelled. ${plural(r.seatsRefunded, 'seat')} refunded.`); repaint(ctx, sessionsPane); }
+    catch (e) { toast(e.message, 'bad'); }
+  });
+  $('#new', pane).onclick = () => sheet({
+    title: 'New wellness class',
+    body: html`<form id="sf"><div class="grid-2">
+      <div class="field"><label for="s-title">Title</label><input id="s-title" name="title" required maxlength="80" placeholder="Morning vinyasa yoga"></div>
+      <div class="field"><label for="s-kind">Type</label><select id="s-kind" name="kind">${meta.wellnessKinds.map(k => html`<option value="${k}">${titleCase(k)}</option>`)}</select></div>
+      <div class="field"><label for="s-mode">Format</label><select id="s-mode" name="mode"><option value="in_person">In person at this venue</option><option value="online">Online (live)</option></select></div>
+      <div class="field"><label for="s-trainer">Trainer</label><input id="s-trainer" name="trainer" maxlength="80"></div>
+      <div class="field"><label for="s-date">Date</label><input id="s-date" name="date" type="date" required min="${venue.today}"></div>
+      <div class="field"><label for="s-start">Starts</label><input id="s-start" name="startTime" type="time" required></div>
+      <div class="field"><label for="s-end">Ends</label><input id="s-end" name="endTime" type="time" required></div>
+      <div class="field"><label for="s-cap">Seats</label><input id="s-cap" name="capacity" type="number" min="1" max="500" value="12" required inputmode="numeric"></div>
+      <div class="field"><label for="s-price">Price per seat (₹)</label><input id="s-price" name="price" type="number" min="0" value="300" required inputmode="decimal"></div></div>
+      <div class="field" id="s-url-wrap" hidden><label for="s-url">Join link (https)</label><input id="s-url" name="joinUrl" type="url" placeholder="https://meet.google.com/..."><div class="hint">Only players who have paid can see this link.</div></div>
+      <div class="field"><label for="s-desc">Description</label><textarea id="s-desc" name="description" maxlength="1000" placeholder="What to expect, what to bring"></textarea></div><p class="form-error" id="s-err" role="alert"></p></form>`,
+    foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="s-go">Schedule</button>`,
+    onMount: (el, close) => {
+      $('#s-mode', el).onchange = e => { $('#s-url-wrap', el).hidden = e.target.value !== 'online'; };
+      $('#s-go', el).onclick = e => busy(e.currentTarget, async () => {
+        try { await api(`/owner/venues/${vid}/sessions`, { method: 'POST', body: formData($('#sf', el)) }); close(); toast('Class scheduled'); repaint(ctx, sessionsPane); }
+        catch (err) { $('#s-err', el).textContent = err.message; }
+      });
+    },
+  });
+}
+
+// ---- Vending machines -----------------------------------------------------------------------------------------------
+async function vendingPane(ctx) {
+  const { vid, pane } = ctx;
+  const { machines, orders, summary } = await api(`/owner/venues/${vid}/vending`);
+  const attention = machines.filter(m => m.active && (m.status !== 'online' || m.lowStock || m.soldOut)).length;
+  const ago = t => !t ? 'never' : Date.now() - t < 90000 ? 'just now' : `${Math.round((Date.now() - t) / 60000)} min ago`;
+  const bar = i => html`<div class="stockbar ${i.stock <= i.lowAt ? 'low' : ''}" role="img" aria-label="${i.stock} of ${i.capacity} in stock"><i style="width:${Math.min(100, Math.round(i.stock / i.capacity * 100))}%"></i></div>`;
+  mount(pane, html`
+    <div class="row between"><p class="muted" style="margin:0">Snack and coffee machines at this venue: live status, stock, faults and sales.</p><button class="btn primary" id="add">${icon('plus')}Add machine</button></div>
+    <div class="kpis section">${kpi('Machines working', `${machines.filter(m => m.status === 'online').length} / ${machines.length}`, attention ? `${attention} need attention` : 'All good')}
+      ${kpi('Orders (7 days)', summary.orders)}${kpi('Sales (7 days)', money(summary.revenue))}${kpi('Top seller', summary.top[0]?.name || '—', summary.top[0] ? `${summary.top[0].qty} sold` : '')}</div>
+    ${machines.length ? machines.map(m => html`<section class="card machine-admin ${m.status}" data-machine="${m.id}">
+      <div class="row between"><div class="row"><span class="machine-ico" aria-hidden="true">${MACHINE_ICON[m.kind]}</span><div><h3 style="margin:0">${m.name}</h3><div class="faint">${m.location || 'No location set'} · seen ${ago(m.lastSeenAt)}${m.temperature != null ? ` · ${m.temperature}°C` : ''}${m.doorOpen ? ' · door open' : ''}</div></div></div>
+        <div class="row">${m.active ? statusPill(m.status) : html`<span class="tag">Paused</span>`}</div></div>
+      ${m.faults.length ? html`<div class="stack" style="margin-top:10px">${m.faults.map(f => html`<div class="notice ${f.severity === 'critical' ? 'bad' : 'warn'}">${icon('alert')}<div class="grow"><b>${f.code}</b> ${f.message || ''}<div class="faint">Since ${fmtDateTime(new Date(f.opened_at).toISOString())}</div></div><button class="btn small" data-resolve="${m.id}:${f.id}">Mark fixed</button></div>`)}</div>` : ''}
+      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Slot</th><th>Item</th><th class="num">Price</th><th>Stock</th><th></th></tr></thead><tbody>
+        ${m.items.map(i => html`<tr><td>${i.slot}</td><td>${i.name}${i.stock <= i.lowAt ? html` <span class="tag ${i.stock === 0 ? 'bad' : 'warn'}">${i.stock === 0 ? 'Sold out' : 'Low'}</span>` : ''}</td><td class="num">${money(i.price)}</td>
+          <td style="min-width:140px">${i.stock} / ${i.capacity}${bar(i)}</td><td><button class="btn small" data-edit="${m.id}:${i.id}">Edit / restock</button></td></tr>`)}</tbody></table></div>
+      <div class="row" style="margin-top:10px"><button class="btn small" data-item="${m.id}">${icon('plus')}Add item</button><button class="btn small" data-pause="${m.id}">${m.active ? 'Pause machine' : 'Resume machine'}</button>
+        <button class="btn small ghost" data-key="${m.id}">${icon('shield')}New API key</button></div></section>`) : empty('bulb', 'No machines yet', 'Add a machine to get its API key, then point the machine controller at it.')}
+    <h2 class="section">Recent orders</h2>
+    ${orders.length ? html`<div class="table-wrap"><table><thead><tr><th>When</th><th>Order</th><th>Machine</th><th>Items</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>
+      ${orders.map(o => html`<tr><td>${fmtDateTime(o.createdAt)}</td><td>${o.ref}<div class="faint">${o.customer}</div></td><td>${o.machine.name}</td><td>${o.items.map(i => `${i.qty}× ${i.name}`).join(', ')}</td><td class="num">${money(o.amount)}</td>
+        <td><span class="tag ${{ dispensed: 'good', paid: 'info', refunded: 'warn' }[o.status] || ''}">${titleCase(o.status)}</span></td>
+        <td>${o.status === 'paid' ? html`<button class="btn small danger" data-refund="${o.id}">Refund</button>` : ''}</td></tr>`)}</tbody></table></div>` : html`<p class="muted">No orders yet.</p>`}`);
+
+  const act = async (fn, msg) => { try { await fn(); if (msg) toast(msg); repaint(ctx, vendingPane); } catch (e) { toast(e.message, 'bad'); } };
+  const base = `/owner/venues/${vid}/vending`;
+  on(pane, 'click', '[data-resolve]', (_e, b) => { const [mid, fid] = b.dataset.resolve.split(':'); act(() => api(`${base}/machines/${mid}/faults/${fid}/resolve`, { method: 'POST' }), 'Marked as fixed'); });
+  on(pane, 'click', '[data-pause]', (_e, b) => { const m = machines.find(x => x.id === b.dataset.pause); act(() => api(`${base}/machines/${m.id}`, { method: 'PATCH', body: { active: !m.active } }), m.active ? 'Machine paused' : 'Machine resumed'); });
+  on(pane, 'click', '[data-refund]', async (_e, b) => {
+    const reason = await confirmDialog('The player is refunded in full and their pickup code stops working.', { title: 'Refund this order?', confirmLabel: 'Refund', danger: true, input: { label: 'Reason (optional)', placeholder: 'e.g. Machine jammed' } });
+    if (reason !== null) act(() => api(`${base}/orders/${b.dataset.refund}/refund`, { method: 'POST', body: { reason } }), 'Order refunded');
+  });
+  on(pane, 'click', '[data-key]', async (_e, b) => {
+    if (!(await confirmDialog('The old key stops working immediately. Update the machine controller with the new one.', { title: 'Create a new API key?', confirmLabel: 'Create key' }))) return;
+    try { const r = await api(`${base}/machines/${b.dataset.key}/key`, { method: 'POST' }); keySheet(r.key, b.dataset.key); } catch (e) { toast(e.message, 'bad'); }
+  });
+  function keySheet(key, mid) {
+    sheet({ title: 'Machine API key', body: html`<div class="notice warn">${icon('info')}<div>Copy this now. It is shown only once and cannot be recovered.</div></div>
+      <p><code class="keybox">${key}</code></p><p class="muted">The machine controller sends it in the <code>x-machine-key</code> header:</p>
+      <pre class="keybox" style="white-space:pre-wrap">POST /api/device/vending/${mid}/heartbeat
+{ "temperature": 4.1, "stock": { "A1": 12 }, "faults": [] }
+
+POST /api/device/vending/${mid}/dispense
+{ "code": "123456" }</pre>`, foot: html`<button class="btn primary" data-close>Done</button>` });
+  }
+  const itemForm = (i = {}) => html`<form id="if"><div class="grid-2">
+    <div class="field"><label for="i-slot">Slot</label><input id="i-slot" name="slot" required maxlength="8" value="${i.slot || ''}" style="text-transform:uppercase"></div>
+    <div class="field"><label for="i-name">Name</label><input id="i-name" name="name" required maxlength="60" value="${i.name || ''}"></div>
+    <div class="field"><label for="i-cat">Category</label><select id="i-cat" name="category">${[['snack', 'Snack'], ['coffee', 'Hot drink'], ['drink', 'Cold drink']].map(([v, l]) => html`<option value="${v}" ${i.category === v ? 'selected' : ''}>${l}</option>`)}</select></div>
+    <div class="field"><label for="i-price">Price (₹)</label><input id="i-price" name="price" type="number" min="0" step="0.5" required value="${i.price != null ? i.price / 100 : ''}"></div>
+    <div class="field"><label for="i-stock">In stock now</label><input id="i-stock" name="stock" type="number" min="0" required value="${i.stock ?? 0}"></div>
+    <div class="field"><label for="i-cap">Capacity</label><input id="i-cap" name="capacity" type="number" min="1" required value="${i.capacity ?? 10}"></div>
+    <div class="field"><label for="i-low">Low-stock alert at</label><input id="i-low" name="lowAt" type="number" min="0" required value="${i.lowAt ?? 3}"></div></div><p class="form-error" id="i-err" role="alert"></p></form>`;
+  on(pane, 'click', '[data-item]', (_e, b) => sheet({ title: 'Add item', body: itemForm(), foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="i-go">Add</button>`,
+    onMount: (el, close) => { $('#i-go', el).onclick = e => busy(e.currentTarget, async () => { try { await api(`${base}/machines/${b.dataset.item}/items`, { method: 'POST', body: formData($('#if', el)) }); close(); toast('Item added'); repaint(ctx, vendingPane); } catch (err) { $('#i-err', el).textContent = err.message; } }); } }));
+  on(pane, 'click', '[data-edit]', (_e, b) => {
+    const [mid, iid] = b.dataset.edit.split(':'), item = machines.find(m => m.id === mid).items.find(i => i.id === iid);
+    sheet({ title: `Edit ${item.name}`, body: itemForm(item), foot: html`<button class="btn danger" id="i-off">Remove from menu</button><span style="flex:1"></span><button class="btn primary" id="i-go">Save</button>`,
+      onMount: (el, close) => {
+        $('#i-go', el).onclick = e => busy(e.currentTarget, async () => { try { await api(`${base}/machines/${mid}/items/${iid}`, { method: 'PATCH', body: formData($('#if', el)) }); close(); toast('Saved'); repaint(ctx, vendingPane); } catch (err) { $('#i-err', el).textContent = err.message; } });
+        $('#i-off', el).onclick = e => busy(e.currentTarget, async () => { await api(`${base}/machines/${mid}/items/${iid}`, { method: 'PATCH', body: { active: false } }); close(); toast('Removed from the menu'); repaint(ctx, vendingPane); });
+      } });
+  });
+  $('#add', pane).onclick = () => sheet({
+    title: 'Add a machine',
+    body: html`<form id="mf"><div class="field"><label for="m-name">Name</label><input id="m-name" name="name" required maxlength="60" placeholder="Lobby coffee machine"></div>
+      <div class="field"><label for="m-kind">Type</label><select id="m-kind" name="kind"><option value="combo">Snacks and drinks</option><option value="snacks">Snacks</option><option value="coffee">Coffee and hot drinks</option></select></div>
+      <div class="field"><label for="m-loc">Where is it?</label><input id="m-loc" name="location" maxlength="100" placeholder="Near the main entrance"></div><p class="form-error" id="m-err" role="alert"></p></form>`,
+    foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="m-go">Create</button>`,
+    onMount: (el, close) => { $('#m-go', el).onclick = e => busy(e.currentTarget, async () => {
+      try { const r = await api(`${base}/machines`, { method: 'POST', body: formData($('#mf', el)) }); close(); keySheet(r.key, r.machine.id); repaint(ctx, vendingPane); }
+      catch (err) { $('#m-err', el).textContent = err.message; }
+    }); },
+  });
+}
+
+// ---- Access control and surveillance --------------------------------------------------------------------------------
+const ALERT_ICON = { critical: 'bad', warning: 'warn', info: '' };
+const REASON = { unknown: 'Unknown code', cancelled: 'Cancelled booking', not_paid: 'Not paid', too_early: 'Too early', ended: 'Slot ended', online_only: 'Online class', full: 'Over limit' };
+const ALERT_LABEL = { overstay: 'Overstays', no_show: 'No-shows', denied_burst: 'Refused-entry bursts', headcount: 'Head-count mismatches', unknown_person: 'Unknown person', tamper: 'Camera tampering', device_offline: 'Device offline' };
+const clock = at => new Date(at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+// Collapse runs of identical events (a team walking through one gate) into one line with a count.
+const groupEvents = list => list.reduce((out, e) => { const last = out.at(-1); const key = t => t.replace(/^[^:]+: /, ''); if (last && key(last.text) === key(e.text) && last.type === e.type && last.at - e.at < 180000) last.n++; else out.push({ ...e, n: 1 }); return out; }, []);
+const devStatus = s => html`<span class="tag ${s === 'online' ? 'good' : 'warn'}">${s === 'online' ? 'Online' : 'Offline'}</span>`;
+
+// The add-camera form offers "this computer's webcam"; that is stored as source=webcam with no stream link.
+const deviceBody = (form, cam) => { const b = formData(form); if (cam && b.viewMode === 'webcam') { b.source = 'webcam'; b.viewMode = 'link'; b.streamUrl = ''; } return b; };
+
+// Test camera: this computer's webcam shown in the browser. Simple motion detection reports events like a real camera would
+// (through the demo simulator, so it needs demo mode). The picture itself never leaves the browser.
+async function startWebcam(el, cam, base, stops) {
+  const video = $('video', el), note = $('.webcam-note', el);
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 360 } }, audio: false }); }
+  catch (e) { note.hidden = false; note.textContent = e.name === 'NotAllowedError' ? 'The browser blocked the camera. Click the camera icon in the address bar, allow it, then reload this page.' : 'No webcam was found on this computer.'; return; }
+  video.srcObject = stream; stops.push(() => stream.getTracks().forEach(t => t.stop()));
+  const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 36;
+  const g = canvas.getContext('2d', { willReadFrequently: true });
+  let prev = null, lastMotion = 0, moving = false;
+  const send = body => api(`${base}/simulate`, { method: 'POST', body: { type: 'camera', deviceId: cam.id, ...body } }).catch(() => {});
+  send({ kind: 'people_count', people: 0 });
+  const tick = setInterval(() => {
+    if (video.readyState < 2) return;
+    g.drawImage(video, 0, 0, 64, 36);
+    const d = g.getImageData(0, 0, 64, 36).data;
+    let diff = 0;
+    if (prev) for (let i = 0; i < d.length; i += 4) diff += Math.abs(d[i + 1] - prev[i + 1]);
+    prev = new Uint8ClampedArray(d);
+    moving = diff / (64 * 36) > 9;
+    el.classList.toggle('moving', moving);
+    if (moving && Date.now() - lastMotion > 20000) { lastMotion = Date.now(); send({ kind: 'motion', note: 'Webcam motion' }); }
+  }, 400);
+  const keepAlive = setInterval(() => send({ kind: 'people_count', people: moving ? 1 : 0 }), 60000);   // also keeps the camera "online"
+  stops.push(() => { clearInterval(tick); clearInterval(keepAlive); });
+}
+
+async function accessPane(ctx) {
+  const { vid, role, pane } = ctx, isManager = can(role, 'manager'), base = `/owner/venues/${vid}/access`;
+  let view = 'live', data = await api(base), timer;
+  const refresh = async () => { try { data = await api(base); if (view === 'live') drawLive(); } catch {} };
+  timer = setInterval(() => { if (!document.hidden && view === 'live' && !document.querySelector('dialog[open]') && !body()?.querySelector('details[open]')) refresh(); }, 8000);
+  onLeave(() => clearInterval(timer));
+
+  const shell = () => mount(pane, html`<div class="row between"><div class="seg" role="group" aria-label="Section">
+      <button type="button" data-view="live" aria-pressed="${view === 'live'}">Live</button>
+      ${isManager ? html`<button type="button" data-view="report" aria-pressed="${view === 'report'}">Analysis</button><button type="button" data-view="devices" aria-pressed="${view === 'devices'}">Devices</button>` : ''}</div>
+      <span class="faint">Gates scan booking QR codes; cameras report events and head counts.</span></div><div id="body" class="section"></div>`);
+  const body = () => $('#body', pane);
+
+  function drawLive() {
+    const simOpen = !!body()?.querySelector('details[open]');
+    const open = data.alerts, gOn = data.points.filter(p => p.status === 'online').length, cOn = data.cameras.filter(c => c.status === 'online').length;
+    mount(body(), html`
+      <div class="kpis">${kpi('Inside now', data.insideTotal, `${plural(data.inside.length, 'booking')}`)}${kpi('Open alerts', open.length, open.length ? 'Needs attention' : 'All clear')}
+        ${kpi('Gates online', `${gOn} / ${data.points.length}`)}${kpi('Cameras online', `${cOn} / ${data.cameras.length}`)}</div>
+      ${open.length ? html`<h2 class="section">Alerts</h2><div class="stack">${open.map(a => html`<div class="notice ${ALERT_ICON[a.severity]}">${icon('alert')}<div class="grow"><b>${ALERT_LABEL[a.kind] || a.kind}</b> · ${clock(a.created_at)}<div>${a.message}</div></div><button class="btn small" data-ack="${a.id}">Acknowledge</button></div>`)}</div>` : ''}
+      <h2 class="section">Inside now</h2>
+      ${data.inside.length ? html`<div class="table-wrap"><table><thead><tr><th>Booking</th><th>Court</th><th>Slot</th><th class="num">People inside</th><th></th></tr></thead><tbody>
+        ${data.inside.map(b => html`<tr><td><b>${b.name || 'Player'}</b><div class="faint">${b.ref}</div></td><td>${b.court}</td><td>${fmtTime(b.startTime)} – ${fmtTime(b.endTime)}</td><td class="num"><b>${b.inside}</b></td><td>${b.overdue ? html`<span class="tag warn">Past end time</span>` : html`<span class="tag good">In slot</span>`}</td></tr>`)}</tbody></table></div>`
+        : html`<p class="muted">Nobody is inside right now.</p>`}
+      <div class="grid-2 section"><div><h2>Cameras</h2>${data.cameras.length ? html`<div class="list">${data.cameras.map(c => html`<div class="list-item"><span class="machine-ico" aria-hidden="true">📷</span><div class="grow"><div class="title">${c.name}</div>
+          <div class="faint">${c.location || 'No location'}${c.people != null ? ` · ${plural(c.people, 'person', 'people')} in view` : ''}</div></div>${devStatus(c.status)}
+          ${c.streamUrl ? html`<a class="btn small" href="${c.streamUrl}" target="_blank" rel="noopener noreferrer">${icon('ext')}Live view</a>` : ''}</div>`)}</div>` : html`<p class="muted">No cameras registered yet.</p>`}</div>
+        <div><h2>Gates</h2>${data.points.length ? html`<div class="list">${data.points.map(p => html`<div class="list-item"><span class="machine-ico" aria-hidden="true">🚪</span><div class="grow"><div class="title">${p.name}</div><div class="faint">${titleCase(p.kind)}${p.location ? ' · ' + p.location : ''}</div></div>${p.active ? devStatus(p.status) : html`<span class="tag">Off</span>`}</div>`)}</div>` : html`<p class="muted">No gates registered yet.</p>`}</div></div>
+      <h2 class="section">Recent activity</h2>
+      ${data.events.length ? html`<div class="timeline">${groupEvents(data.events).slice(0, 14).map(e => html`<div class="tl ${e.ok ? '' : 'bad'}"><time>${clock(e.at)}</time><span>${icon(e.type === 'gate' ? 'qr' : 'camera')}${e.text}${e.n > 1 ? html` <b class="tag">×${e.n}</b>` : ''}</span></div>`)}</div>` : html`<p class="muted">No activity yet.</p>`}
+      ${isManager && data.points.length + data.cameras.length ? html`<details class="card section" ${simOpen ? raw('open') : ''}><summary><b>Try it without hardware</b> <span class="faint">(demo mode)</span></summary>
+        <p class="faint">Sends exactly what a real gate or camera would. Use a booking reference from the Bookings tab; entry opens 15 minutes before the slot.</p>
+        <form id="sim" class="row" style="align-items:flex-end"><div class="field" style="margin:0"><label for="sim-gate">Gate</label><select id="sim-gate">${data.points.map(p => html`<option value="${p.id}">${p.name}</option>`)}</select></div>
+          <div class="field" style="margin:0"><label for="sim-ref">Booking reference</label><input id="sim-ref" placeholder="TCXXXXXXXX" autocomplete="off" style="text-transform:uppercase"></div>
+          <button class="btn primary" type="submit" data-dir="in">Scan in</button><button class="btn" type="submit" data-dir="out">Scan out</button></form>
+        ${data.cameras.length ? html`<form id="simc" class="row" style="align-items:flex-end;margin-top:12px"><div class="field" style="margin:0"><label for="simc-cam">Camera</label><select id="simc-cam">${data.cameras.map(c => html`<option value="${c.id}">${c.name}</option>`)}</select></div>
+          <div class="field" style="margin:0"><label for="simc-kind">Event</label><select id="simc-kind"><option value="people_count">People count</option><option value="unknown_person">Unknown person</option><option value="motion">Motion</option><option value="tamper">Tampering</option></select></div>
+          <div class="field" style="margin:0"><label for="simc-n">People</label><input id="simc-n" type="number" min="0" value="10" style="width:90px"></div><button class="btn" type="submit">Send event</button></form>` : ''}</details>` : ''}`);
+  }
+
+  async function drawReport(days = 7) {
+    mount(body(), skeleton('card', 2));
+    const r = await api(`${base}/report?days=${days}`), maxHeat = Math.max(1, ...r.heat.flat()), maxCam = Math.max(1, ...r.camera.peakByHour);
+    mount(body(), html`
+      <div class="row between"><h2 style="margin:0">Last ${days} days</h2><select id="days" aria-label="Period" style="width:auto">${[7, 14, 30].map(d => html`<option value="${d}" ${d === days ? 'selected' : ''}>${d} days</option>`)}</select></div>
+      <div class="kpis section">${kpi('Entries', r.entries, `${r.exits} exits`)}${kpi('Attendance', r.attendanceRate == null ? '—' : r.attendanceRate + '%', `${r.attended} of ${r.bookingsFinished} paid bookings`)}
+        ${kpi('Time on site', r.avgDwellPercent == null ? '—' : r.avgDwellPercent + '%', 'of the booked time')}${kpi('Peak on site', r.peakOccupancy, 'people at once')}
+        ${kpi('Overstays', r.overstays)}${kpi('No-shows', r.noShows)}${kpi('Refused entries', r.denied)}${kpi('Camera events', Object.values(r.camera.byKind).reduce((a, b) => a + b, 0))}</div>
+      <div class="card section"><h2>When people arrive</h2><p class="faint">Entries by weekday and hour. Darker means busier, useful for staffing the gate and planning cleaning between peaks.</p>
+        <div style="overflow-x:auto"><div class="heat" role="table" aria-label="Entries by weekday and hour"><span></span>${Array.from({ length: 24 }, (_, h) => html`<span style="text-align:center">${h % 3 === 0 ? h : ''}</span>`)}
+          ${WEEKDAYS.map((d, wd) => html`<span role="rowheader">${d}</span>${r.heat[wd].map((n, h) => html`<span class="c" role="cell" data-l="${n ? Math.min(5, Math.ceil(n / maxHeat * 5)) : 0}" title="${d} ${h}:00 — ${plural(n, 'entry', 'entries')}"></span>`)}`)}</div></div>
+        <div class="heat-legend">Fewer ${[0, 1, 2, 3, 4, 5].map(l => html`<i style="background:var(--seq-${l})"></i>`)} More</div></div>
+      <div class="card"><h2>Busiest moment each day</h2>${r.dailyPeak.length ? barChart(r.dailyPeak.map(d => ({ label: fmtDate(d.date), short: d.date.slice(8), value: d.peak })), { format: v => `${Math.round(v)} people`, label: 'Peak people on site per day' }) : html`<p class="muted">No gate data in this period.</p>`}</div>
+      <div class="grid-2"><div class="card"><h2>Refused entries</h2>${r.deniedReasons.length ? html`<div class="list">${r.deniedReasons.map(d => html`<div class="row between"><span>${REASON[d.reason] || d.label}</span><b>${d.n}</b></div>`)}</div>` : html`<p class="muted">None. Everyone who scanned was let in.</p>`}</div>
+        <div class="card"><h2>Alerts raised</h2>${Object.keys(r.alertsByKind).length ? html`<div class="list">${Object.entries(r.alertsByKind).map(([k, n]) => html`<div class="row between"><span>${ALERT_LABEL[k] || k}</span><b>${n}</b></div>`)}</div>` : html`<p class="muted">No alerts in this period.</p>`}</div></div>
+      <div class="card"><h2>Most people seen by cameras, by hour</h2>${r.camera.peakByHour.some(Boolean) ? barChart(r.camera.peakByHour.map((v, h) => ({ label: `${h}:00`, short: h % 3 === 0 ? String(h) : '', value: v })), { format: v => `${Math.round(v)} people`, label: 'Peak people per hour' }) : html`<p class="muted">No camera head counts yet.</p>`}<span class="sr-only">${maxCam}</span></div>`);
+    $('#days', body()).onchange = e => drawReport(Number(e.target.value));
+  }
+
+  function keySheet(title, key, deviceId, kind) {
+    const isCam = kind === 'camera', path = isCam ? `/api/device/camera/${deviceId}/event` : `/api/device/access/${deviceId}/scan`;
+    sheet({ title, body: html`<div class="notice warn">${icon('info')}<div>Copy this key now. It is shown only once and cannot be recovered.</div></div><p><code class="keybox">${key}</code></p>
+      <p class="muted">The device sends it in the <code>x-device-key</code> header:</p><pre class="keybox" style="white-space:pre-wrap">POST ${path}
+${isCam ? '{ "kind": "people_count", "people": 12 }' : '{ "credential": "TCXXXXXXXX", "direction": "in" }'}</pre>
+      <p class="faint">${isCam ? 'Kinds: motion, people_count, unknown_person, tamper.' : 'The response says granted or denied, so the gate can open or stay shut.'} Send a heartbeat to <code>/heartbeat</code> at least every 2 minutes.</p>`, foot: html`<button class="btn primary" data-close>Done</button>` });
+  }
+  function drawDevices() {
+    mount(body(), html`<div class="row between"><h2 style="margin:0">Gates and doors</h2><button class="btn primary" data-add="point">${icon('plus')}Add gate</button></div>
+      ${data.points.length ? html`<div class="list" style="margin-top:10px">${data.points.map(p => html`<div class="list-item"><span class="machine-ico" aria-hidden="true">🚪</span><div class="grow"><div class="title">${p.name}</div><div class="faint">${titleCase(p.kind)}${p.location ? ' · ' + p.location : ''}</div></div>${devStatus(p.status)}
+        <button class="btn small" data-toggle="point:${p.id}">${p.active ? 'Turn off' : 'Turn on'}</button><button class="btn small ghost" data-newkey="point:${p.id}">New key</button><button class="btn small danger" data-delete="point:${p.id}">Delete</button></div>`)}</div>` : html`<p class="muted">Add the gates or doors where people scan their booking QR code.</p>`}
+      <div class="row between section"><h2 style="margin:0">Cameras</h2><button class="btn primary" data-add="camera">${icon('plus')}Add camera</button></div>
+      ${data.cameras.length ? html`<div class="list" style="margin-top:10px">${data.cameras.map(c => html`<div class="list-item"><span class="machine-ico" aria-hidden="true">📷</span><div class="grow"><div class="title">${c.name}</div><div class="faint">${c.location || 'No location'}${c.source === 'webcam' ? ' · this computer\'s webcam (test)' : c.streamUrl ? ' · live link set' : ''}</div></div>${devStatus(c.status)}
+        <button class="btn small" data-toggle="camera:${c.id}">${c.active ? 'Turn off' : 'Turn on'}</button>${c.source === 'webcam' ? '' : html`<button class="btn small ghost" data-newkey="camera:${c.id}">New key</button>`}<button class="btn small danger" data-delete="camera:${c.id}">Delete</button></div>`)}</div>` : html`<p class="muted">Cameras report events and head counts; add a stream link to open the live view from here.</p>`}`);
+  }
+
+  shell(); drawLive();
+  on(pane, 'click', '[data-view]', async (_e, b) => {
+    view = b.dataset.view; $$('[data-view]', pane).forEach(x => x.setAttribute('aria-pressed', x === b));
+    try { if (view === 'live') { await refresh(); drawLive(); } else if (view === 'report') await drawReport(); else drawDevices(); } catch (e) { mount(body(), errorView(e)); }
+  });
+  on(pane, 'click', '[data-ack]', async (_e, b) => { try { await api(`${base}/alerts/${b.dataset.ack}/ack`, { method: 'POST' }); await refresh(); drawLive(); } catch (e) { toast(e.message, 'bad'); } });
+  on(pane, 'submit', '#sim', async (e, f) => {
+    e.preventDefault();
+    try {
+      const r = await api(`${base}/simulate`, { method: 'POST', body: { type: 'scan', deviceId: $('#sim-gate', f).value, credential: $('#sim-ref', f).value, direction: e.submitter?.dataset.dir || 'in' } });
+      toast(`${r.result === 'granted' ? '✔' : '✖'} ${r.message}${r.result === 'granted' ? ` (${r.inside} inside)` : ''}`, r.result === 'granted' ? '' : 'bad'); await refresh(); drawLive();
+    } catch (err) { toast(err.message, 'bad'); }
+  });
+  on(pane, 'submit', '#simc', async (e, f) => {
+    e.preventDefault();
+    try { await api(`${base}/simulate`, { method: 'POST', body: { type: 'camera', deviceId: $('#simc-cam', f).value, kind: $('#simc-kind', f).value, people: Number($('#simc-n', f).value) } }); toast('Camera event sent'); await refresh(); drawLive(); }
+    catch (err) { toast(err.message, 'bad'); }
+  });
+  on(pane, 'click', '[data-toggle]', async (_e, b) => {
+    const [kind, did] = b.dataset.toggle.split(':'), item = (kind === 'point' ? data.points : data.cameras).find(x => x.id === did);
+    try { await api(`${base}/${kind === 'point' ? 'points' : 'cameras'}/${did}`, { method: 'PATCH', body: { active: !item.active } }); await refresh(); drawDevices(); } catch (e) { toast(e.message, 'bad'); }
+  });
+  on(pane, 'click', '[data-newkey]', async (_e, b) => {
+    const [kind, did] = b.dataset.newkey.split(':');
+    if (!(await confirmDialog('The old key stops working immediately. Update the device with the new one.', { title: 'Create a new key?', confirmLabel: 'Create key' }))) return;
+    try { const r = await api(`${base}/${kind === 'point' ? 'points' : 'cameras'}/${did}/key`, { method: 'POST' }); keySheet('Device key', r.key, did, kind); } catch (e) { toast(e.message, 'bad'); }
+  });
+  on(pane, 'click', '[data-delete]', async (_e, b) => {
+    const [kind, did] = b.dataset.delete.split(':'), item = (kind === 'point' ? data.points : data.cameras).find(x => x.id === did);
+    if (!(await confirmDialog(kind === 'camera' ? 'The camera and the events it reported are removed. Past alerts stay in the history.' : 'The gate is removed. A gate with scan history cannot be deleted: turn it off instead.', { title: `Delete "${item.name}"?`, confirmLabel: 'Delete', danger: true }))) return;
+    try { await api(`${base}/${kind === 'point' ? 'points' : 'cameras'}/${did}`, { method: 'DELETE' }); toast('Deleted'); await refresh(); drawDevices(); } catch (e) { toast(e.message, 'bad'); }
+  });
+  on(pane, 'click', '[data-add]', (_e, b) => {
+    const cam = b.dataset.add === 'camera';
+    sheet({ title: cam ? 'Add a camera' : 'Add a gate', body: html`<form id="df"><div class="field"><label for="d-name">Name</label><input id="d-name" name="name" required maxlength="60" placeholder="${cam ? 'Parking camera' : 'Main gate'}"></div>
+        ${cam ? '' : html`<div class="field"><label for="d-kind">Type</label><select id="d-kind" name="kind"><option value="gate">Gate or turnstile</option><option value="door">Door</option><option value="court">Court entrance</option></select></div>`}
+        <div class="field"><label for="d-loc">Where is it?</label><input id="d-loc" name="location" maxlength="100"></div>
+        ${cam ? html`<div class="field"><label for="d-url">Live view link (optional)</label><input id="d-url" name="streamUrl" type="url" placeholder="https://..."></div>
+        <div class="field"><label for="d-mode">How to show it</label><select id="d-mode" name="viewMode"><option value="image">Live image or MJPEG stream (shows on the Surveillance wall)</option><option value="page">Web page of the camera (embedded)</option><option value="link">Open in its own window</option><option value="webcam">This computer's webcam (for testing)</option></select><div class="hint">Cameras that only offer RTSP need a small converter to a web stream.</div></div>` : ''}<p class="form-error" id="d-err" role="alert"></p></form>`,
+      foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="d-go">Create</button>`,
+      onMount: (el, close) => { $('#d-go', el).onclick = e => busy(e.currentTarget, async () => {
+        try { const r = await api(`${base}/${cam ? 'cameras' : 'points'}`, { method: 'POST', body: deviceBody($('#df', el), cam) }); close(); keySheet(cam ? 'Camera key' : 'Gate key', r.key, r.id, cam ? 'camera' : 'point'); await refresh(); drawDevices(); }
+        catch (err) { $('#d-err', el).textContent = err.message; }
+      }); } });
+  });
+}
+
+// ---- Questions from players ----------------------------------------------------------------------------------------
+async function questionsPane(ctx) {
+  const { vid, pane } = ctx, list = await api(`/owner/venues/${vid}/questions`);
+  const open = list.filter(q => !q.answered), done = list.filter(q => q.answered);
+  mount(pane, html`<p class="muted">Public questions about this venue. Answers show on your venue page under your venue's name, and the player is notified.</p>
+    <h2>Waiting for an answer ${open.length ? html`<span class="tag warn">${open.length}</span>` : ''}</h2>
+    ${open.length ? html`<div class="stack">${open.map(q => questionCard(q))}</div>` : empty('chat', 'No open questions', 'You are all caught up.')}
+    ${done.length ? html`<h2 class="section">Answered</h2><div class="stack">${done.map(q => questionCard(q))}</div>` : ''}`);
+  for (const q of open) $(`[data-q="${q.id}"]`, pane)?.append(answerForm(q, () => repaint(ctx, questionsPane)));
+}
+
+// ---- Coaches ----------------------------------------------------------------------------------------------------------
+async function coachesPane(ctx) {
+  const { vid, pane } = ctx, base = `/owner/venues/${vid}/coaches`;
+  const [list, meta] = await Promise.all([api(base), state.meta ? state.meta : api('/meta').then(m => (state.meta = m))]);
+  const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const summary = c => { const by = {}; for (const a of c.availability) (by[a.weekday] ||= []).push(`${fmtTime(a.start)}–${fmtTime(a.end)}`); return Object.entries(by).map(([d, w]) => `${DAY[d]} ${w.join(', ')}`).join(' · ') || 'No availability'; };
+  mount(pane, html`<div class="row between"><p class="muted" style="margin:0">Coaches players can book one-to-one. Their slots, ratings and comments appear on their profile.</p><button class="btn primary" id="new">${icon('plus')}Add coach</button></div>
+    <div class="section">${list.length ? html`<div class="list">${list.map(c => html`<div class="card" data-coach="${c.id}"><div class="row between"><div><h3 style="margin:0">${c.name} ${c.active ? '' : html`<span class="tag">Hidden</span>`}</h3>
+      <div class="faint">${c.scope === 'all' ? 'All games' : titleCase(c.specialty)} · ${money(c.price)} per ${c.sessionMinutes} min · ${c.rating ? '★ ' + c.rating + ` (${c.reviews})` : 'no ratings yet'} · ♥ ${c.likes}</div><div class="faint">${summary(c)}</div></div>
+      <div class="row"><button class="btn small" data-reviews="${c.id}">Comments</button><button class="btn small" data-edit="${c.id}">Edit</button></div></div></div>`)}</div>` : empty('users', 'No coaches yet', 'Add a coach and set when they are available.')}</div>`);
+
+  const windowRow = (w = { weekday: 1, start: '17:00', end: '20:00' }) => html`<div class="row nowrap win"><select aria-label="Day" name="wd">${DAY.map((d, i) => html`<option value="${i}" ${i === w.weekday ? 'selected' : ''}>${d}</option>`)}</select>
+    <input type="time" name="ws" aria-label="From" value="${w.start}" required><span>to</span><input type="time" name="we" aria-label="To" value="${w.end}" required><button type="button" class="btn small ghost" data-rm aria-label="Remove window">${icon('x')}</button></div>`;
+  const editor = (c = null) => sheet({
+    title: c ? `Edit ${c.name}` : 'Add a coach', wide: true,
+    body: html`<form id="cf"><div class="grid-2"><div class="field"><label for="c-name">Name</label><input id="c-name" name="name" required maxlength="60" value="${c?.name || ''}"></div>
+      <div class="field"><label for="c-spec">Specialty</label><select id="c-spec" name="specialty">${meta.coachSpecialties.map(s => html`<option value="${s}" ${c?.specialty === s ? 'selected' : ''}>${titleCase(s)}</option>`)}</select></div>
+      <div class="field"><label for="c-scope">Coaches</label><select id="c-scope" name="scope"><option value="game" ${c?.scope !== 'all' ? 'selected' : ''}>One game (the specialty)</option><option value="all" ${c?.scope === 'all' ? 'selected' : ''}>All games (common coach)</option></select><div class="hint">Common coaches can be added to a slot for any game.</div></div>
+      <div class="field"><label for="c-price">Price per session (₹)</label><input id="c-price" name="price" type="number" min="0" required value="${c ? c.price / 100 : ''}"></div>
+      <div class="field"><label for="c-min">Session length (minutes)</label><input id="c-min" name="sessionMinutes" type="number" min="15" max="240" step="15" required value="${c?.sessionMinutes || 60}"></div>
+      <div class="field"><label for="c-years">Years of experience</label><input id="c-years" name="experienceYears" type="number" min="0" max="60" value="${c?.experienceYears ?? 3}"></div>
+      <div class="field"><label for="c-lang">Languages</label><input id="c-lang" name="languages" maxlength="100" value="${c ? c.languages.join(', ') : 'English'}"></div></div>
+      <div class="field"><label for="c-bio">About the coach</label><textarea id="c-bio" name="bio" maxlength="800">${c?.bio || ''}</textarea></div>
+      <div class="field"><span class="label">Weekly availability</span><div id="wins" class="stack">${(c?.availability.length ? c.availability : [undefined]).map(w => windowRow(w))}</div>
+        <button type="button" class="btn small" id="addwin" style="margin-top:8px">${icon('plus')}Add a time window</button><div class="hint">Sessions are cut from these windows, one after another.</div></div>
+      ${c ? html`<label class="check"><input type="checkbox" name="active" ${c.active ? 'checked' : ''}>Visible to players</label>` : ''}<p class="form-error" id="c-err" role="alert"></p></form>`,
+    foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="c-go">Save</button>`,
+    onMount: (el, close) => {
+      $('#addwin', el).onclick = () => $('#wins', el).insertAdjacentHTML('beforeend', windowRow().toString());
+      on(el, 'click', '[data-rm]', (_e, b) => { if ($$('.win', el).length > 1) b.closest('.win').remove(); });
+      $('#c-go', el).onclick = e => busy(e.currentTarget, async () => {
+        const f = $('#cf', el), fd = new FormData(f);
+        const body = Object.fromEntries([...fd.entries()].filter(([k]) => !['wd', 'ws', 'we', 'active'].includes(k)));
+        body.availability = $$('.win', el).map(w => ({ weekday: Number($('[name=wd]', w).value), start: $('[name=ws]', w).value, end: $('[name=we]', w).value }));
+        if (c) body.active = !!$('[name=active]', el).checked;
+        try { await api(c ? `${base}/${c.id}` : base, { method: c ? 'PATCH' : 'POST', body }); close(); toast('Saved'); repaint(ctx, coachesPane); }
+        catch (err) { $('#c-err', el).textContent = err.message; }
+      });
+    },
+  });
+  $('#new', pane).onclick = () => editor();
+  on(pane, 'click', '[data-edit]', (_e, b) => editor(list.find(c => c.id === b.dataset.edit)));
+  on(pane, 'click', '[data-reviews]', (_e, b) => {
+    const c = list.find(x => x.id === b.dataset.reviews);
+    sheet({ title: `Comments for ${c.name}`, body: c.reviewList.length ? html`<div class="stack">${c.reviewList.map(r => html`<div class="review"><div class="row between"><b>${r.name}</b><span>${stars(r.rating)}</span></div>${r.comment ? html`<p style="margin:4px 0">${r.comment}</p>` : ''}
+        ${r.reply ? html`<div class="owner-reply"><b>Your reply</b><br>${r.reply}</div>` : html`<form class="row nowrap" data-reply="${r.id}" style="margin-top:6px"><input placeholder="Reply publicly" maxlength="500" required style="flex:1"><button class="btn small primary">Reply</button></form>`}</div>`)}</div>` : html`<p class="muted">No comments yet.</p>`,
+      onMount: el => on(el, 'submit', '[data-reply]', async (e, f) => {
+        e.preventDefault();
+        try { await api(`${base}/${c.id}/reviews/${f.dataset.reply}/reply`, { method: 'POST', body: { reply: $('input', f).value } }); toast('Reply posted'); el.closest('dialog')?.close(); repaint(ctx, coachesPane); } catch (err) { toast(err.message, 'bad'); }
+      }) });
+  });
+}
+
+// ---- Photos and videos ----------------------------------------------------------------------------------------------
+async function mediaPane(ctx) {
+  const { vid, venue, pane } = ctx, base = `/owner/venues/${vid}/media`;
+  const items = await api(base), games = [...new Set(venue.courts.flatMap(c => c.sports))];
+  mount(pane, html`<p class="muted">Photos and videos shown on each game's page and in Learn. Pick a game, or leave it as "All games" to show on every page.</p>
+    <form class="card" id="up" style="margin-bottom:14px"><div class="grid-2">
+      <div class="field"><label for="m-game">Show on</label><select id="m-game" name="sport"><option value="">All games</option>${games.map(g => html`<option value="${g}">${titleCase(g)}</option>`)}</select></div>
+      <div class="field"><label for="m-cap">Caption (optional)</label><input id="m-cap" name="caption" maxlength="140" placeholder="Evening practice under the lights"></div></div>
+      <div class="row"><label class="btn" for="m-file" style="margin:0">${icon('plus')}Choose photo or video</label><input id="m-file" type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm" class="sr-only"><span class="faint" id="m-name">Photos up to 3 MB, videos up to 25 MB (MP4 or WebM)</span></div>
+      <div class="field" style="margin-top:12px"><label for="m-yt">Or a YouTube link</label><div class="row nowrap"><input id="m-yt" type="url" placeholder="https://www.youtube.com/watch?v=..." style="flex:1"><button type="button" class="btn" id="m-yt-go">Add link</button></div></div>
+      <p class="form-error" id="m-err" role="alert"></p><button class="btn primary" id="m-go" disabled>Upload</button></form>
+    ${items.length ? html`<div class="media-admin">${items.map(m => html`<div class="card media-card" data-id="${m.id}">
+      <div class="thumb">${m.kind === 'image' ? html`<img src="${m.url}" alt="" loading="lazy">` : m.kind === 'video' ? html`<video src="${m.url}#t=0.2" preload="metadata" muted></video>` : html`<div class="yt">▶ YouTube</div>`}</div>
+      <div class="body"><span class="tag ${m.sport ? 'good' : ''}">${m.sport ? titleCase(m.sport) : 'All games'}</span> <span class="tag">${titleCase(m.kind)}</span><div class="faint">${m.caption || 'No caption'}</div>
+        <div class="row" style="margin-top:6px"><button class="btn small" data-edit="${m.id}">Edit</button><button class="btn small danger" data-del="${m.id}">Delete</button></div></div></div>`)}</div>` : empty('camera', 'No photos or videos yet', 'Upload your first one above.')}`);
+
+  let file = null;
+  $('#m-file', pane).onchange = e => {
+    file = e.target.files[0] || null; $('#m-err', pane).textContent = '';
+    const limit = file?.type.startsWith('video/') ? 25 : 3;
+    if (file && file.size > limit * 1024 * 1024) { $('#m-err', pane).textContent = `That file is too large (max ${limit} MB).`; file = null; }
+    $('#m-name', pane).textContent = file ? `${file.name} · ${(file.size / 1048576).toFixed(1)} MB` : 'Photos up to 3 MB, videos up to 25 MB (MP4 or WebM)';
+    $('#m-go', pane).disabled = !file;
+  };
+  const send = async body => {
+    const f = Object.fromEntries(new FormData($('#up', pane)).entries());
+    await api(base, { method: 'POST', body: { sport: f.sport, caption: f.caption, ...body } });
+    toast('Added'); repaint(ctx, mediaPane);
+  };
+  $('#up', pane).onsubmit = e => { e.preventDefault(); };
+  $('#m-go', pane).onclick = e => busy(e.currentTarget, async () => {
+    try { const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); }); await send({ dataUrl }); }
+    catch (err) { $('#m-err', pane).textContent = err.message; }
+  });
+  $('#m-yt-go', pane).onclick = e => busy(e.currentTarget, async () => {
+    try { await send({ youtubeUrl: $('#m-yt', pane).value }); } catch (err) { $('#m-err', pane).textContent = err.message; }
+  });
+  on(pane, 'click', '[data-del]', async (_e, b) => {
+    if (!(await confirmDialog('It disappears from the app straight away.', { title: 'Delete this item?', confirmLabel: 'Delete', danger: true }))) return;
+    try { await api(`${base}/${b.dataset.del}`, { method: 'DELETE' }); toast('Deleted'); repaint(ctx, mediaPane); } catch (e) { toast(e.message, 'bad'); }
+  });
+  on(pane, 'click', '[data-edit]', (_e, b) => {
+    const m = items.find(x => x.id === b.dataset.edit);
+    sheet({ title: 'Edit', body: html`<form id="ef"><div class="field"><label for="e-game">Show on</label><select id="e-game" name="sport"><option value="">All games</option>${games.map(g => html`<option value="${g}" ${m.sport === g ? 'selected' : ''}>${titleCase(g)}</option>`)}</select></div>
+        <div class="field"><label for="e-cap">Caption</label><input id="e-cap" name="caption" maxlength="140" value="${m.caption}"></div></form>`, foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="e-go">Save</button>`,
+      onMount: (el, close) => { $('#e-go', el).onclick = ev => busy(ev.currentTarget, async () => { await api(`${base}/${m.id}`, { method: 'PATCH', body: Object.fromEntries(new FormData($('#ef', el)).entries()) }); close(); toast('Saved'); repaint(ctx, mediaPane); }); } });
+  });
+}
+
+// ---- Surveillance wall ---------------------------------------------------------------------------------------------
+async function surveillancePane(ctx) {
+  const { vid, pane } = ctx, base = `/owner/venues/${vid}/access`;
+  let data = await api(base), timer, snap;
+  const stops = [], canManage = can(ctx.role, 'manager');
+  const stream = u => /\.(svg|mjpe?g)(\?|$)|mjpeg/i.test(u);           // streams and animated feeds are left alone; snapshots are reloaded
+  const tile = c => {
+    const live = c.status === 'online';
+    const view = c.source === 'webcam' ? html`<video class="webcam" autoplay muted playsinline aria-label="${c.name} live view"></video><div class="cam-off webcam-note" hidden></div>`
+      : c.viewMode === 'image' && c.streamUrl ? html`<img src="${c.streamUrl}" alt="${c.name} live view" ${stream(c.streamUrl) ? '' : raw('data-snap')}>`
+      : c.viewMode === 'page' && c.streamUrl ? html`<iframe src="${c.streamUrl}" title="${c.name} live view" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>`
+      : html`<div class="cam-off">${c.streamUrl ? html`<div>${icon('camera')}<p>This camera opens in its own window</p><a class="btn small" href="${c.streamUrl}" target="_blank" rel="noopener noreferrer">${icon('ext')}Open live view</a></div>` : html`<div>${icon('camera')}<p>No stream link set. Add one under Access & security, Devices.</p></div>`}</div>`;
+    return html`<div class="cam-tile ${live ? '' : 'offline'}" data-cam="${c.id}">${view}${live || c.source === 'webcam' ? '' : html`<div class="cam-off">Camera offline</div>`}
+      <div class="cam-bar"><span>${c.name}${c.location ? html` <span style="opacity:.7">· ${c.location}</span>` : ''}</span><span class="row nowrap" style="gap:6px"><span class="row nowrap cam-meta" style="gap:6px">${c.source === 'webcam' ? html`<span class="tag info">Test webcam</span>` : ''}${c.people != null ? html`<span class="tag">${icon('users')}${c.people}</span>` : ''}${devStatus(c.status)}</span>${canManage ? html`<button class="icon-btn cam-del" data-del-cam="${c.id}" aria-label="Delete ${c.name}" title="Delete camera">${icon('trash')}</button>` : ''}</span></div>
+      ${c.viewMode !== 'link' && c.streamUrl ? html`<button class="cam-zoom" data-zoom="${c.id}" aria-label="Enlarge ${c.name}"></button>` : ''}</div>`;
+  };
+  const alertsHtml = () => data.alerts.length ? html`<div class="stack">${data.alerts.slice(0, 6).map(a => html`<div class="notice ${ALERT_ICON[a.severity]}">${icon('alert')}<div class="grow"><b>${ALERT_LABEL[a.kind] || a.kind}</b> · ${clock(a.created_at)}<div>${a.message}</div></div><button class="btn small" data-ack="${a.id}">Acknowledge</button></div>`)}</div>` : html`<p class="muted">No open alerts.</p>`;
+  mount(pane, html`<div class="kpis">${kpi('Cameras online', `${data.cameras.filter(c => c.status === 'online').length} / ${data.cameras.length}`)}${kpi('People inside', data.insideTotal, `${plural(data.inside.length, 'booking')}`)}${kpi('Open alerts', data.alerts.length)}</div>
+    ${canManage && !data.cameras.some(c => c.source === 'webcam') ? html`<div class="row" style="margin-top:12px"><button class="btn" id="add-webcam">${icon('camera')}Add this computer's webcam as a test camera</button><span class="faint">Shows your own webcam here and reports motion like a real camera. The picture stays in your browser.</span></div>` : ''}
+    <div class="section">${data.cameras.length ? html`<div class="cam-wall" id="wall">${data.cameras.map(tile)}</div>` : empty('camera', 'No cameras yet', 'Add cameras under Access & security, then Devices, or use your webcam as a test camera above.')}</div>
+    <h2 class="section">Alerts</h2><div id="alerts">${alertsHtml()}</div>`);
+
+  // Snapshot cameras refresh every few seconds; everything else is left running.
+  snap = setInterval(() => $$('img[data-snap]', pane).forEach(i => { const u = new URL(i.src, location.href); u.searchParams.set('t', Date.now()); i.src = u.toString(); }), 3000);
+  timer = setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      data = await api(base);
+      $('#alerts', pane).innerHTML = alertsHtml().toString();
+      for (const c of data.cameras) {
+        const el = $(`[data-cam="${c.id}"]`, pane); if (!el) continue;
+        el.classList.toggle('offline', c.status !== 'online');
+        $('.cam-meta', el).innerHTML = `${c.source === 'webcam' ? '<span class="tag info">Test webcam</span>' : ''}${c.people != null ? `<span class="tag">${c.people} in view</span>` : ''}${devStatus(c.status)}`;
+      }
+    } catch { /* keep the last picture */ }
+  }, 8000);
+  onLeave(() => { clearInterval(timer); clearInterval(snap); stops.forEach(f => f()); });
+  for (const c of data.cameras.filter(x => x.source === 'webcam' && x.active)) startWebcam($(`[data-cam="${c.id}"]`, pane), c, base, stops);
+  $('#add-webcam', pane)?.addEventListener('click', e => busy(e.currentTarget, async () => {
+    await api(`${base}/cameras`, { method: 'POST', body: { name: 'My webcam', location: 'This computer', source: 'webcam', viewMode: 'link' } });
+    toast('Webcam added. Allow the camera when your browser asks.'); repaint(ctx, surveillancePane);
+  }));
+  on(pane, 'click', '[data-del-cam]', async (_e, b) => {
+    const c = data.cameras.find(x => x.id === b.dataset.delCam);
+    if (!(await confirmDialog('The camera and the events it reported are removed. Past alerts stay in the history.', { title: `Delete "${c.name}"?`, confirmLabel: 'Delete', danger: true }))) return;
+    try { await api(`${base}/cameras/${c.id}`, { method: 'DELETE' }); toast('Camera deleted'); repaint(ctx, surveillancePane); } catch (e) { toast(e.message, 'bad'); }
+  });
+
+  on(pane, 'click', '[data-zoom]', (_e, b) => {
+    const c = data.cameras.find(x => x.id === b.dataset.zoom);
+    sheet({ title: c.name, wide: true, body: c.viewMode === 'page' ? html`<div class="cam-tile" style="aspect-ratio:16/9"><iframe src="${c.streamUrl}" title="${c.name}" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe></div>` : html`<div class="cam-tile" style="aspect-ratio:16/9"><img src="${c.streamUrl}" alt="${c.name} live view"></div>` });
+  });
+  on(pane, 'click', '[data-ack]', async (_e, b) => { try { await api(`${base}/alerts/${b.dataset.ack}/ack`, { method: 'POST' }); data = await api(base); $('#alerts', pane).innerHTML = alertsHtml().toString(); } catch (e) { toast(e.message, 'bad'); } });
+}
+
 // ---- Refunds -------------------------------------------------------------------------------------------------------
 async function refundsPane(ctx) {
   const { vid, pane } = ctx;
@@ -610,7 +1069,7 @@ async function settingsPane(ctx) {
   on(pane, 'click', '[data-court]', (_e, b) => courtSheet(v.courts.find(c => c.id === b.dataset.court)));
 }
 
-const PANES = { overview: overviewPane, calendar: calendarPane, bookings: bookingsPane, checkin: checkinPane, customers: customersPane, support: supportPane, reviews: reviewsPane,
+const PANES = { surveillance: surveillancePane, media: mediaPane, coaches: coachesPane, questions: questionsPane, access: accessPane, vending: vendingPane, sessions: sessionsPane, overview: overviewPane, calendar: calendarPane, bookings: bookingsPane, checkin: checkinPane, customers: customersPane, support: supportPane, reviews: reviewsPane,
   pricing: pricingPane, coupons: couponsPane, refunds: refundsPane, reports: reportsPane, settings: settingsPane, staff: staffPane, payouts: payoutsPane, audit: auditPane };
 
 // ---- Onboarding wizard ----------------------------------------------------------------------------------------------

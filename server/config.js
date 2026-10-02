@@ -17,4 +17,6 @@ export const config = {
   reminderMinutes: Number(env.TURF_REMINDER_MINUTES || 120),
   referralRewardPaise: Number(env.TURF_REFERRAL_REWARD || 10000),
   maxActiveHolds: 3,
+  // Demo helper: machines in demo mode report in by themselves so the dashboard stays live without hardware.
+  vendingSim: env.TURF_VENDING_SIM ? env.TURF_VENDING_SIM === 'true' : !production,
 };
