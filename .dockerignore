@@ -1,0 +1,9 @@
+data
+node_modules
+.env
+.env.*
+!.env.example
+.git
+.claude
+server/tests
+*.md

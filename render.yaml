@@ -1,0 +1,28 @@
+# Render Blueprint: one Docker web service. The free plan has no persistent disk, so this runs as a public demo:
+# demo data is loaded on every start and anything created is lost on redeploy or restart.
+# For real use: switch to plan "starter", uncomment the disk, and set TURF_DEV_OTP / TURF_SEED_DEMO to "false"
+# once an SMS/email provider is wired into the sign-in code adapter.
+services:
+  - type: web
+    name: turfconnect
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore
+    healthCheckPath: /api/health
+    autoDeploy: true
+    # disk:
+    #   name: turf-data
+    #   mountPath: /data
+    #   sizeGB: 1
+    envVars:
+      - key: TURF_SECRET
+        generateValue: true
+      - key: TURF_WEBHOOK_SECRET
+        generateValue: true
+      - key: TURF_DEV_OTP
+        value: "true"
+      - key: TURF_SEED_DEMO
+        value: "true"
+      - key: TURF_COMMISSION_PERCENT
+        value: "10"

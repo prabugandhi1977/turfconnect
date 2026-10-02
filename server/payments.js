@@ -1,0 +1,132 @@
+// Payments. A provider creates payment intents and refunds; a booking is only ever confirmed by a webhook whose
+// signature verifies. The sandbox provider stands in for a hosted gateway (Stripe, Razorpay): its checkout page is
+// simulated in the web app, and "completing" it makes the server sign and POST a webhook to itself, so the real
+// verification path runs end to end.
+import { randomBytes } from 'node:crypto';
+import { config } from './config.js';
+import { id, now, one, run, transaction } from './db.js';
+import { hmacHex, safeEqual } from './security.js';
+import { bad, conflict, HttpError, notFound } from './validate.js';
+import { confirmBooking, failBooking, issueRefund, money } from './bookings.js';
+import { notify } from './notify.js';
+import { publishUser, publishVenue } from './events.js';
+import { audit } from './audit.js';
+
+const SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000;
+let selfBaseUrl = `http://127.0.0.1:${config.port}`;
+export const setSelfBaseUrl = url => { selfBaseUrl = url; };
+
+const providers = {
+  sandbox: {
+    createIntent: () => { const intentId = 'pi_sbx_' + randomBytes(12).toString('hex'); return { intentId, checkoutUrl: `#/pay/${intentId}` }; },
+    refund: () => ({ ref: 're_sbx_' + randomBytes(10).toString('hex') }),
+  },
+};
+const provider = () => {
+  const p = providers[config.paymentProvider];
+  if (!p) throw new Error(`Payment provider "${config.paymentProvider}" is not implemented`);
+  return p;
+};
+export const refundPayment = (payment, amount) => payment.provider === 'free' || payment.provider === 'sandbox' ? providers.sandbox.refund(payment, amount) : provider().refund(payment, amount);
+
+export function startPayment(user, booking) {
+  return transaction(() => {
+    const b = one('SELECT * FROM bookings WHERE id=?', booking.id);
+    if (b.status !== 'held') conflict(b.status === 'confirmed' ? 'This booking is already paid' : 'This checkout has expired. Please pick your slot again.', 'hold_expired');
+    if (b.hold_expires_at < Date.now()) conflict('This checkout has expired. Please pick your slot again.', 'hold_expired');
+    // Repeated clicks reuse the open intent, so a customer can never be charged twice for one hold.
+    const open = one("SELECT * FROM payments WHERE booking_id=? AND status='requires_payment'", b.id);
+    if (open) return { intentId: open.intent_id, checkoutUrl: `#/pay/${open.intent_id}`, amount: open.amount, currency: open.currency };
+    if (b.amount === 0) {
+      run("INSERT INTO payments (id,booking_id,provider,intent_id,amount,currency,status,created_at,updated_at) VALUES (?,?,'free',?,0,?,'succeeded',?,?)", id(), b.id, 'free_' + b.id, config.currency, now(), now());
+      confirmBooking(b.id);
+      return { free: true, status: 'confirmed' };
+    }
+    const intent = provider().createIntent(b);
+    run("INSERT INTO payments (id,booking_id,provider,intent_id,amount,currency,status,created_at,updated_at) VALUES (?,?,?,?,?,?,'requires_payment',?,?)",
+      id(), b.id, config.paymentProvider, intent.intentId, b.amount, config.currency, now(), now());
+    audit(user.id, 'payment.started', 'booking', b.id, { venueId: b.venue_id, intent: intent.intentId, amount: b.amount });
+    return { intentId: intent.intentId, checkoutUrl: intent.checkoutUrl, amount: b.amount, currency: config.currency };
+  });
+}
+
+// ---- Webhook signatures: header "t=<ms>,v1=<hex hmac of `${t}.${body}`>" ------------------------------------
+export function signPayload(body, t = Date.now()) { return `t=${t},v1=${hmacHex(config.webhookSecret, `${t}.${body}`)}`; }
+export function verifySignature(header, body) {
+  const parts = Object.fromEntries(String(header || '').split(',').map(kv => kv.split('=')));
+  const t = Number(parts.t);
+  if (!t || !parts.v1) return false;
+  if (Math.abs(Date.now() - t) > SIGNATURE_TOLERANCE_MS) return false;
+  return safeEqual(hmacHex(config.webhookSecret, `${t}.${body}`), parts.v1);
+}
+
+export function handleWebhook(raw, signature) {
+  if (!verifySignature(signature, raw)) throw new HttpError(401, 'Invalid webhook signature');
+  let event; try { event = JSON.parse(raw); } catch { bad('Invalid JSON'); }
+  if (!event?.id || !event?.type) bad('Malformed event');
+  const touched = [];
+  const result = transaction(() => {
+    if (one('SELECT 1 FROM webhook_events WHERE event_id=?', event.id)) return { received: true, duplicate: true };
+    run('INSERT INTO webhook_events (event_id,type,received_at) VALUES (?,?,?)', event.id, event.type, now());
+    const payment = one('SELECT * FROM payments WHERE intent_id=?', event.data?.intentId);
+    if (!payment) return { received: true, ignored: 'unknown intent' };
+    const b = one('SELECT * FROM bookings WHERE id=?', payment.booking_id);
+    touched.push(b);
+    if (event.type === 'payment_intent.succeeded') {
+      if (payment.status === 'succeeded') return { received: true };
+      if (event.data.amount !== payment.amount) {
+        run("UPDATE payments SET status='failed', failure_reason='amount mismatch', updated_at=? WHERE id=?", now(), payment.id);
+        audit(null, 'payment.amount_mismatch', 'payment', payment.id, { venueId: b.venue_id, expected: payment.amount, got: event.data.amount });
+        return { received: true, error: 'amount mismatch' };
+      }
+      run("UPDATE payments SET status='succeeded', updated_at=? WHERE id=?", now(), payment.id);
+      const confirmed = confirmBooking(b.id);
+      if (!confirmed.ok) {
+        // Paid after the hold lapsed and someone else took the slot: refund in full automatically.
+        if (b.status === 'held') failBooking(b, 'Slot no longer available');
+        issueRefund(b, payment.amount, { origin: 'system', reason: 'Slot was no longer available when payment completed' });
+        notify(b.customer_id, { kind: 'booking_failed', title: 'Slot no longer available', body: `Your payment for ${b.ref} arrived after the slot was released. ${money(payment.amount)} has been refunded in full.`, link: `#/booking/${b.id}`, bookingId: b.id });
+      }
+      audit(null, 'payment.succeeded', 'payment', payment.id, { venueId: b.venue_id, ref: b.ref, amount: payment.amount, confirmed: confirmed.ok });
+      return { received: true, confirmed: confirmed.ok };
+    }
+    if (event.type === 'payment_intent.payment_failed') {
+      run("UPDATE payments SET status='failed', failure_reason=?, updated_at=? WHERE id=?", String(event.data.reason || 'Payment declined').slice(0, 200), now(), payment.id);
+      // Failed payments release the held slot straight away rather than waiting for the hold timer.
+      if (b.status === 'held') failBooking(b, 'Payment failed');
+      notify(b.customer_id, { kind: 'payment_failed', title: 'Payment failed', body: `Your payment for ${b.ref} did not go through, so the slot was released. You were not charged.`, link: `#/booking/${b.id}`, bookingId: b.id, channels: ['inapp'] });
+      audit(null, 'payment.failed', 'payment', payment.id, { venueId: b.venue_id, ref: b.ref, reason: event.data.reason });
+      return { received: true };
+    }
+    return { received: true, ignored: event.type };
+  });
+  for (const b of touched) {
+    publishVenue(b.venue_id, { date: b.date, courtId: b.court_id });
+    const status = one('SELECT status FROM bookings WHERE id=?', b.id).status;
+    publishUser(b.customer_id, 'booking', { id: b.id, status });
+  }
+  return result;
+}
+
+// ---- Sandbox checkout ----------------------------------------------------------------------------------------
+export async function completeSandboxCheckout(user, intentId, outcome) {
+  if (config.paymentProvider !== 'sandbox') notFound();
+  const payment = one('SELECT p.*, b.customer_id FROM payments p JOIN bookings b ON b.id=p.booking_id WHERE p.intent_id=?', intentId);
+  if (!payment || payment.customer_id !== user.id) notFound('Payment not found');
+  if (payment.status !== 'requires_payment') conflict('This payment is already finished');
+  const body = JSON.stringify({
+    id: 'evt_sbx_' + randomBytes(10).toString('hex'),
+    type: outcome === 'success' ? 'payment_intent.succeeded' : 'payment_intent.payment_failed',
+    data: { intentId, amount: payment.amount, reason: outcome === 'success' ? undefined : 'Card declined (sandbox)' },
+  });
+  const res = await fetch(`${selfBaseUrl}/api/webhooks/payments`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-turf-signature': signPayload(body) }, body });
+  if (!res.ok) throw new HttpError(502, 'The payment gateway did not respond');
+  return { delivered: true };
+}
+
+export function sandboxIntent(user, intentId) {
+  const p = one(`SELECT p.intent_id, p.amount, p.currency, p.status, b.id AS booking_id, b.ref, b.customer_id, b.hold_expires_at, v.name AS venue
+                 FROM payments p JOIN bookings b ON b.id=p.booking_id JOIN venues v ON v.id=b.venue_id WHERE p.intent_id=?`, intentId);
+  if (!p || p.customer_id !== user.id) notFound('Payment not found');
+  return { intentId: p.intent_id, amount: p.amount, currency: p.currency, status: p.status, bookingId: p.booking_id, ref: p.ref, venue: p.venue, holdExpiresAt: p.hold_expires_at };
+}

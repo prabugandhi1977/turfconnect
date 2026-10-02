@@ -1,0 +1,18 @@
+# Local or single-server deployment. Settings come from .env next to this file (copy .env.example).
+services:
+  turfconnect:
+    build: .
+    image: turfconnect
+    ports:
+      - "${HOST_PORT:-3200}:3200"
+    environment:
+      TURF_SECRET: ${TURF_SECRET:?Set TURF_SECRET (32+ random characters) in .env}
+      TURF_WEBHOOK_SECRET: ${TURF_WEBHOOK_SECRET:?Set TURF_WEBHOOK_SECRET (32+ random characters) in .env}
+      TURF_DEV_OTP: ${TURF_DEV_OTP:-false}
+      TURF_SEED_DEMO: ${TURF_SEED_DEMO:-false}
+      TURF_COMMISSION_PERCENT: ${TURF_COMMISSION_PERCENT:-10}
+    volumes:
+      - turf-data:/data
+    restart: unless-stopped
+volumes:
+  turf-data:
