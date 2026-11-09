@@ -8,9 +8,9 @@ const kpi = (k, v, s = '') => html`<div class="kpi"><div class="k">${k}</div><di
 function repaint(ctx, fn) { const n = ctx.pane.cloneNode(false); ctx.pane.replaceWith(n); ctx.pane = n; return fn(ctx); }
 
 export async function adminConsole(main, { tab = 'overview' }) {
-  if (state.me?.role !== 'admin') return mount(main, empty('shield', 'Admins only', 'This area is for TurfConnect staff.', html`<a class="btn" href="#/">Back to TurfConnect</a>`));
+  if (state.me?.role !== 'admin') return mount(main, empty('shield', 'Admins only', 'This area is for Thidal staff.', html`<a class="btn" href="#/">Back to Thidal</a>`));
   if (!TABS.some(t => t[0] === tab)) return go('#/admin', { replace: true });
-  mount(main, html`<div class="console-head"><h1 style="margin:0">TurfConnect admin</h1></div>
+  mount(main, html`<div class="console-head"><h1 style="margin:0">Thidal admin</h1></div>
     <div class="console"><nav class="console-nav" aria-label="Admin sections">${TABS.map(([k, l, ic]) => html`<a href="#/admin/${k}" ${k === tab ? raw('aria-current="page"') : ''}>${icon(ic)}${l}</a>`)}</nav><section id="pane"></section></div>`);
   const ctx = { pane: $('#pane', main) };
   mount(ctx.pane, skeleton('card', 3));

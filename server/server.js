@@ -110,5 +110,5 @@ export function start(port = config.port, host = '0.0.0.0') {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = await start();
-  console.log(`TurfConnect running on http://localhost:${server.address().port} (payments: ${config.paymentProvider}${config.devOtp ? ', dev OTP on' : ''})`);
+  console.log(`Thidal running on http://localhost:${server.address().port} (payments: ${config.paymentProvider}${config.devOtp ? ', dev OTP on' : ''})`);
 }

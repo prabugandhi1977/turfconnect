@@ -1,4 +1,4 @@
-// Blog and Q&A. Admins write the blog. Anyone can read; signed-in players ask questions about a venue or about TurfConnect in general.
+// Blog and Q&A. Admins write the blog. Anyone can read; signed-in players ask questions about a venue or about Thidal in general.
 // A venue's owner and managers answer venue questions, admins answer anything. Spam is limited by rate limits, a no-links rule,
 // player reports (three distinct reports hide an item) and admin moderation.
 import { all, id, now, one, run } from '../db.js';
@@ -22,7 +22,7 @@ function postView(p, { full = false } = {}) {
   const author = p.author_id ? one('SELECT name FROM users WHERE id=?', p.author_id)?.name : null;
   return {
     id: p.id, slug: p.slug, title: p.title, summary: p.summary, category: p.category, status: p.status, views: p.views, publishedAt: p.published_at, updatedAt: p.updated_at,
-    author: firstName(author || 'TurfConnect team'), readingMinutes: readingMinutes(p.body), ...(full ? { body: p.body } : {}),
+    author: firstName(author || 'Thidal team'), readingMinutes: readingMinutes(p.body), ...(full ? { body: p.body } : {}),
   };
 }
 function postInput(body, cur = {}) {
@@ -117,11 +117,11 @@ export default function communityRoutes(r) {
     if (!q) notFound('Question not found');
     const venue = q.venue_id ? one('SELECT * FROM venues WHERE id=?', q.venue_id) : null;
     const role = u.role === 'admin' ? 'admin' : venue ? venueRole(u, venue) : null;
-    if (!['admin', 'owner', 'manager'].includes(role)) forbidden(venue ? 'Only the venue team or TurfConnect can answer this' : 'Only the TurfConnect team can answer general questions');
+    if (!['admin', 'owner', 'manager'].includes(role)) forbidden(venue ? 'Only the venue team or Thidal can answer this' : 'Only the Thidal team can answer general questions');
     const text = str(body.body, 'Answer', { min: 3, max: 1500 });
     if (/https?:\/\/\S*(bit\.ly|tinyurl)/i.test(text)) bad('That link is not allowed');
     const aid = id();
-    run('INSERT INTO answers (id,question_id,user_id,author_label,body,created_at) VALUES (?,?,?,?,?,?)', aid, q.id, u.id, role === 'admin' ? 'TurfConnect team' : `${venue.name} team`, text, now());
+    run('INSERT INTO answers (id,question_id,user_id,author_label,body,created_at) VALUES (?,?,?,?,?,?)', aid, q.id, u.id, role === 'admin' ? 'Thidal team' : `${venue.name} team`, text, now());
     notify(q.user_id, { kind: 'answer', title: 'Your question was answered', body: q.title, link: `#/questions/${q.id}`, channels: ['inapp', 'email'] });
     audit(u.id, 'qa.answered', 'question', q.id, { venueId: q.venue_id });
     return created(questionView(q));

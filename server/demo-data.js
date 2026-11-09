@@ -66,7 +66,7 @@ export function seedDemo() {
   if (one('SELECT COUNT(*) AS n FROM venues').n) return 'Demo data already present (use --reset to start over).';
   const today = zonedParts(Date.now(), TZ);
   return transaction(() => {
-    user('Asha (TurfConnect admin)', { email: 'admin@turfconnect.test', role: 'admin' });
+    user('Asha (Thidal admin)', { email: 'admin@turfconnect.test', role: 'admin' });
     const owner = user('Ravi Kumar', { email: 'owner@turfconnect.test', phone: '+919800000001', role: 'owner' });
     const owner2 = user('Lakshmi Sundaram', { email: 'owner2@turfconnect.test', role: 'owner' });
     const manager = user('Meena Pillai', { email: 'manager@turfconnect.test' });
@@ -280,7 +280,7 @@ export function seedDemo() {
         `Not every pitch suits every game. Use this checklist before you book.\n\n## Surface\n\n- **Artificial grass:** forgiving on joints, plays well in all weather. Wear turf shoes, not metal studs.\n- **Synthetic indoor:** best in the monsoon, slightly faster ball speed.\n- **Clay or hard court:** for tennis and pickleball, check the maintenance schedule.\n\n## Size and format\n\nFive-a-side needs about 40 by 25 metres, seven-a-side roughly 60 by 40. Box cricket arenas are netted, so check the ball rules.\n\n## Lighting and timing\n\nFloodlit pitches let you play after work. Peak slots cost more, so try early mornings or weekday afternoons for the best price.`],
       ['Hydration on game day: how much is enough?', 'fitness', 'A simple plan for before, during and after a match in Indian summer heat.', 4,
         `Even mild dehydration slows you down and clouds decisions. In summer heat the effect is bigger.\n\n## A simple plan\n\n- **Two hours before:** drink 500 ml of water.\n- **During:** small sips every 15 minutes, about 150 to 250 ml.\n- **After:** replace what you lost, plus a pinch of salt or an electrolyte drink if you played more than an hour.\n\n## Signs to stop\n\nDizziness, headache, cramps or stopping sweating are signals to leave the pitch and rest in the shade.\n\nOur vending machines stock water and electrolyte drinks: pre-order in the app and collect with a code, no coins needed.`],
-      ['Introducing wellness classes, snacks and smarter entry', 'news', 'What is new at TurfConnect: classes, pools, pre-order vending and QR entry.', 3,
+      ['Introducing wellness classes, snacks and smarter entry', 'news', 'What is new at Thidal: classes, pools, pre-order vending and QR entry.', 3,
         `We have added a few things players have been asking for.\n\n## What is new\n\n- **Swimming pools:** book lanes by the hour, just like a turf.\n- **Wellness classes:** yoga, meditation, fitness and aqua, in person or live online.\n- **Snacks and coffee:** pre-order from machines at your venue and collect with a code.\n- **QR entry:** scan your booking at the gate. Venues get alerts if a slot overruns or nobody turns up.\n\nTell us what to build next in the Q&A section.`],
       ['Draft: monsoon game-day guide', 'tips', 'Coming soon.', 0, 'Notes for the monsoon guide. Not published yet and long enough to save as a draft.'],
     ];
@@ -303,7 +303,7 @@ export function seedDemo() {
     const q4 = ask(players[3], 'aqua', 'Is the pool heated, and what is the water temperature?', '', 4);
     reply(q4, owner, 'Aqua Arena Pool team', 'The pool is heated and held at around 28°C all year. The shallow end is 1.0 m and the deep end 1.8 m.', 3);
     const q5 = ask(players[7], null, 'How do refunds work if it rains?', 'I booked an outdoor pitch and the forecast looks bad. Can I cancel for free?', 2);
-    reply(q5, adminId, 'TurfConnect team', 'Cancellation follows each venue\'s policy shown on its page, for example a full refund up to 24 hours before the game. If the venue closes because of weather, you are refunded in full automatically.', 1);
+    reply(q5, adminId, 'Thidal team', 'Cancellation follows each venue\'s policy shown on its page, for example a full refund up to 24 hours before the game. If the venue closes because of weather, you are refunded in full automatically.', 1);
     ask(players[8], null, 'Can I book a pool lane for my kids\' swim class?', 'Looking for a coach-led session for children aged 8 to 10.', 0);
 
     // Coaches with weekly availability, likes, ratings and comments.
@@ -371,7 +371,7 @@ export function seedDemo() {
     run("INSERT INTO payouts (id,venue_id,period_start,period_end,gross,refunds,commission,net,status,reference,created_at,paid_at) VALUES (?,?,?,?,?,?,?,?,'paid','NEFT-DEMO-0001',?,?)",
       id(), k.id, ps, pe, t.gross, t.refunds, commission, t.gross - t.refunds - commission, now(), now());
 
-    run("INSERT INTO notifications (id,user_id,channel,kind,title,body,link,status,send_after,sent_at,created_at) VALUES (?,?,'inapp','welcome','Welcome to TurfConnect','Use code WELCOME20 for 20% off your next booking.','#/profile','sent',?,?,?)", id(), player, Date.now(), now(), now());
+    run("INSERT INTO notifications (id,user_id,channel,kind,title,body,link,status,send_after,sent_at,created_at) VALUES (?,?,'inapp','welcome','Welcome to Thidal','Use code WELCOME20 for 20% off your next booking.','#/profile','sent',?,?,?)", id(), player, Date.now(), now(), now());
     return `Seeded ${Object.keys(venues).length} venues, ${players.length} players and ${count} bookings.`;
   });
 }

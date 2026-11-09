@@ -1,8 +1,10 @@
-# TurfConnect
+# Thidal · திடல்
+
+**Play. Train. Belong.** Thidal (திடல்) is the Tamil word for an open public ground.
 
 Mobile-first booking and operations platform for sports turfs: players find, book, pay for and review turfs;
 venue owners manage availability, pricing, staff, refunds and reports; platform admins verify venues, resolve
-disputes and settle payouts. Built to the TurfConnect PRD MVP scope.
+disputes and settle payouts. Built to the TurfConnect PRD MVP scope (the platform was renamed Thidal).
 
 **Stack:** Node.js 22 (no npm dependencies), built-in SQLite (`node:sqlite`), vanilla JavaScript installable PWA.
 
@@ -73,7 +75,7 @@ In demo mode the **Try it without hardware** panel sends the same requests from 
 ## Blog and Q&A
 
 - **Blog** (`#/blog`): platform admins write, edit, publish and delete articles under **Admin > Blog**. Posts support paragraphs, `## headings`, `- bullet` lists and `**bold**`; drafts stay private.
-- **Q&A** (`#/questions`, and on every venue page): signed-in players ask public questions about a venue or about TurfConnect. A venue's owner and managers answer venue
+- **Q&A** (`#/questions`, and on every venue page): signed-in players ask public questions about a venue or about Thidal. A venue's owner and managers answer venue
   questions (**Questions** tab in the venue console); admins answer general ones and anything else. Askers are notified when answered.
 - **Moderation**: links are not allowed in questions, asking is rate limited, three distinct player reports hide an item, and admins restore or hide items under **Admin > Q&A moderation**.
 

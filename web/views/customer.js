@@ -36,7 +36,7 @@ const STATE_LABEL = { available: 'Available', almost_full: 'Almost full', held: 
 export async function venueView(main, { slug }, query, opts = {}) {
   mount(main, html`<div class="skeleton sk-block"></div>${skeleton('line', 4)}`);
   const v = await api(`/venues/${encodeURIComponent(slug)}`);
-  document.title = `${v.name} · TurfConnect`;
+  document.title = `${v.name} · Thidal`;
   const saved = session.get(`tc.pick.${v.id}`, {});
   const pick = {
     date: query.get('date') || saved.date || v.today, sport: opts.sport || query.get('sport') || saved.sport || v.sports[0],
@@ -250,7 +250,7 @@ export async function checkoutView(main, { id }) {
           <p class="form-error" id="perr" role="alert"></p>
           ${!b.coupon && coupons.length ? html`<div class="chips wrap">${coupons.slice(0, 4).map(c => html`<button type="button" class="chip" data-code="${c.code}">${icon('tag')}${c.code}</button>`)}</div>` : ''}</form></div>
         <button class="btn primary block" id="pay" style="min-height:52px;font-size:16px">${b.amount ? `Pay ${money(b.amount)} securely` : 'Confirm free booking'}</button>
-        <p class="faint" style="text-align:center">${icon('shield')} Payments are processed by our payment partner. TurfConnect never sees or stores your card details.</p>
+        <p class="faint" style="text-align:center">${icon('shield')} Payments are processed by our payment partner. Thidal never sees or stores your card details.</p>
         <button class="btn ghost block" id="release">Cancel and release this slot</button>
       </div>
     </div>`);
@@ -287,7 +287,7 @@ export async function payView(main, { intent }) {
   mount(main, html`${p.orderId ? '' : steps(2)}<div class="gateway">
     <div class="gw-head">${icon('shield')}<div><b>TurfPay</b> <span style="opacity:.8">· Secure checkout</span></div><span class="spacer" style="flex:1"></span><span class="tag warn">Test mode</span></div>
     <div class="gw-body">
-      <div class="row between"><span class="muted">Paying TurfConnect · ${p.venue}</span><span class="faint">Ref ${p.ref}</span></div>
+      <div class="row between"><span class="muted">Paying Thidal · ${p.venue}</span><span class="faint">Ref ${p.ref}</span></div>
       <h1 style="font-size:2rem;margin:8px 0">${money(p.amount)}</h1>
       <div class="notice warn">${icon('info')}<div><b>Sandbox payment.</b> No real money moves. In production this page is the payment partner's hosted checkout (UPI, cards, net banking, wallets). Choose an outcome to simulate it.</div></div>
       <div class="chips wrap" style="margin:14px 0" aria-hidden="true"><span class="chip on">UPI</span><span class="chip">Card</span><span class="chip">Net banking</span><span class="chip">Wallet</span></div>
@@ -305,7 +305,7 @@ export async function payView(main, { intent }) {
 // ---- Booking / ticket ----------------------------------------------------------------------------------------------
 function ics(b) {
   const f = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TurfConnect//EN', 'BEGIN:VEVENT', `UID:${b.ref}@turfconnect`, `DTSTAMP:${f(Date.now())}`, `DTSTART:${f(b.startAt)}`, `DTEND:${f(b.endAt)}`,
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Thidal//EN', 'BEGIN:VEVENT', `UID:${b.ref}@turfconnect`, `DTSTAMP:${f(Date.now())}`, `DTSTART:${f(b.startAt)}`, `DTEND:${f(b.endAt)}`,
     `SUMMARY:${sportLabel(b.sport).replace(/^\S+ /, '')} at ${b.venue.name}`, `LOCATION:${b.venue.address}\\, ${b.venue.city}`, `DESCRIPTION:${b.court.name}. Booking ref ${b.ref}.`,
     'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Game in 2 hours', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
 }
@@ -455,7 +455,7 @@ export async function invoiceView(main, { id }) {
   mount(main, html`<div class="row between no-print" style="margin-bottom:12px"><a class="btn ghost small" href="#/booking/${id}">${icon('back')}Back</a><button class="btn small" id="print">${icon('print')}Print or save as PDF</button></div>
     <article class="card" style="max-width:760px;margin:0 auto">
       <div class="row between" style="align-items:flex-start"><div><h1 style="margin:0">Invoice</h1><div class="muted">${inv.number}</div></div>
-        <div style="text-align:right"><b>TurfConnect</b><div class="faint">On behalf of ${inv.venue.business_name || inv.venue.name}</div>${inv.venue.tax_id ? html`<div class="faint">GSTIN ${inv.venue.tax_id}</div>` : ''}</div></div>
+        <div style="text-align:right"><b>Thidal</b><div class="faint">On behalf of ${inv.venue.business_name || inv.venue.name}</div>${inv.venue.tax_id ? html`<div class="faint">GSTIN ${inv.venue.tax_id}</div>` : ''}</div></div>
       <hr><div class="grid-2"><div><div class="faint">Billed to</div><b>${inv.customer.name || 'Customer'}</b><div class="muted">${inv.customer.phone || ''} ${inv.customer.email || ''}</div></div>
         <div><div class="faint">Issued</div><b>${fmtDateTime(inv.issuedAt)}</b><div class="faint" style="margin-top:6px">Venue</div><b>${inv.venue.name}</b><div class="muted">${inv.venue.address}, ${inv.venue.city}</div></div></div>
       <div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>

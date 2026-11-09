@@ -548,7 +548,7 @@ test('players ask, the right team answers, and nobody else can', async () => {
   assert.equal(shown.askedBy.includes(' '), false, 'only first names are public');
   assert.ok(one("SELECT 1 FROM notifications WHERE kind='answer'"), 'the asker is told');
   const general = await api('/qa/questions', { token: tokens.p2, method: 'POST', body: { title: 'Do you plan to add a gym finder?' } });
-  assert.equal((await api(`/qa/questions/${general.data.id}/answers`, { token: tokens.owner, method: 'POST', body: { body: 'We are looking at it.' } })).status, 403, 'general questions are for the TurfConnect team');
+  assert.equal((await api(`/qa/questions/${general.data.id}/answers`, { token: tokens.owner, method: 'POST', body: { body: 'We are looking at it.' } })).status, 403, 'general questions are for the Thidal team');
   assert.equal((await api(`/qa/questions/${general.data.id}/answers`, { token: tokens.admin, method: 'POST', body: { body: 'Great idea, we are looking at it.' } })).status, 201);
 });
 

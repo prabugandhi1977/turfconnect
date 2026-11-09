@@ -27,7 +27,7 @@ function postCard(p, big = false) {
 
 export async function blogListView(main, _p, query) {
   const f = { category: query.get('category') || '', q: '' };
-  mount(main, html`<section class="hero"><p class="eyebrow">Learn</p><h1>Play smarter, <em>feel better.</em></h1><p class="muted">Tips, fitness and venue guides from the TurfConnect team.</p></section>
+  mount(main, html`<section class="hero"><p class="eyebrow">Learn</p><h1>Play smarter, <em>feel better.</em></h1><p class="muted">Tips, fitness and venue guides from the Thidal team.</p></section>
     <div class="row between" style="margin:12px 0">${tabs('blog')}<div class="search-box" style="flex:1;min-width:200px;max-width:340px">${icon('search')}<input type="search" id="q" placeholder="Search articles" aria-label="Search articles"></div></div>
     <div class="chips" role="group" aria-label="Category"><button class="chip" data-cat="" aria-pressed="${!f.category}">All</button>
       ${Object.entries(CAT).map(([k, [e, l]]) => html`<button class="chip" data-cat="${k}" aria-pressed="${f.category === k}">${e} ${l}</button>`)}</div>
@@ -49,14 +49,14 @@ export async function blogListView(main, _p, query) {
 export async function blogPostView(main, { slug }) {
   mount(main, html`<div class="skeleton sk-block"></div>${skeleton('line', 6)}`);
   const p = await api(`/blog/${encodeURIComponent(slug)}`);
-  document.title = `${p.title} · TurfConnect`;
+  document.title = `${p.title} · Thidal`;
   const [emoji, label] = CAT[p.category] || ['📝', titleCase(p.category)];
   mount(main, html`<a href="#/blog" class="btn ghost small" style="margin-left:-8px">${icon('back')}All articles</a>
     <article class="article"><div class="post-cover ${p.category} wide" aria-hidden="true"><span>${emoji}</span></div>
       <span class="tag good">${label}</span><h1>${p.title}</h1>
       <div class="faint">${p.author} · ${fmtDate(p.publishedAt.slice(0, 10))} · ${p.readingMinutes} min read</div>
       <div class="prose">${prose(p.body)}</div>
-      <div class="card" style="margin-top:24px"><h3>Have a question?</h3><p class="muted">Ask the TurfConnect team or a venue directly. Answers are public, so others can learn too.</p><a class="btn primary" href="#/questions">${icon('chat')}Ask a question</a></div></article>
+      <div class="card" style="margin-top:24px"><h3>Have a question?</h3><p class="muted">Ask the Thidal team or a venue directly. Answers are public, so others can learn too.</p><a class="btn primary" href="#/questions">${icon('chat')}Ask a question</a></div></article>
     ${p.related.length ? html`<h2 class="section">More ${label.toLowerCase()}</h2><div class="venue-grid">${p.related.map(x => postCard(x))}</div>` : ''}`);
 }
 
@@ -72,7 +72,7 @@ export function questionCard(q) {
 async function askSheet(venues, venueId, done) {
   sheet({
     title: 'Ask a question',
-    body: html`<form id="af"><div class="field"><label for="a-where">About</label><select id="a-where" name="venueId"><option value="">TurfConnect in general</option>
+    body: html`<form id="af"><div class="field"><label for="a-where">About</label><select id="a-where" name="venueId"><option value="">Thidal in general</option>
         ${venues.map(v => html`<option value="${v.id}" ${v.id === venueId ? 'selected' : ''}>${v.name}</option>`)}</select><div class="hint">Venue questions are answered by that venue's team.</div></div>
       <div class="field"><label for="a-title">Your question</label><input id="a-title" name="title" required minlength="8" maxlength="140" placeholder="Is there floodlight cover on Pitch B?"></div>
       <div class="field"><label for="a-body">Details (optional)</label><textarea id="a-body" name="body" maxlength="1000"></textarea></div>
@@ -95,7 +95,7 @@ function wireReports(root) {
 
 export async function questionsView(main, _p, query) {
   const f = { scope: 'all', q: '' };
-  mount(main, html`<section class="hero"><p class="eyebrow">Q&amp;A</p><h1>Ask first, <em>play sure.</em></h1><p class="muted">Questions about venues, bookings and classes, answered by the venue team or TurfConnect.</p></section>
+  mount(main, html`<section class="hero"><p class="eyebrow">Q&amp;A</p><h1>Ask first, <em>play sure.</em></h1><p class="muted">Questions about venues, bookings and classes, answered by the venue team or Thidal.</p></section>
     <div class="row between" style="margin:12px 0">${tabs('qa')}<button class="btn primary" id="ask">${icon('plus')}Ask a question</button></div>
     <div class="row"><div class="search-box" style="flex:1;min-width:200px">${icon('search')}<input type="search" id="q" placeholder="Search questions" aria-label="Search questions"></div>
       <div class="seg" role="group" aria-label="Show">${[['all', 'All'], ['venue', 'Venues'], ['general', 'General']].map(([v, l]) => html`<button type="button" data-scope="${v}" aria-pressed="${f.scope === v}">${l}</button>`)}</div></div>

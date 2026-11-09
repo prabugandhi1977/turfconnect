@@ -1,10 +1,10 @@
-// Help: support chat with a venue or TurfConnect, and disputes that escalate to platform admins.
+// Help: support chat with a venue or Thidal, and disputes that escalate to platform admins.
 import { $, api, busy, confirmDialog, sheet, empty, fmtDate, fmtDateTime, fmtRange, go, html, icon, mount, onLeave, skeleton, state, toast } from '../lib.js';
 
 const statusTag = t => html`<span class="tag ${t.status === 'open' ? 'warn' : 'good'}">${t.status === 'open' ? 'Open' : 'Resolved'}</span>`;
 export const ticketList = list => list.length ? html`<div class="list">${list.map(t => html`
   <a class="list-item" href="#/support/${t.id}"><div class="grow"><div class="title">${t.subject}</div>
-    <div class="faint">${t.kind === 'dispute' ? 'Dispute · ' : ''}${t.venue || 'TurfConnect'}${t.customer && state.me?.id !== t.user_id ? ` · from ${t.customer}` : ''} · ${fmtDateTime(t.updated_at)}</div>
+    <div class="faint">${t.kind === 'dispute' ? 'Dispute · ' : ''}${t.venue || 'Thidal'}${t.customer && state.me?.id !== t.user_id ? ` · from ${t.customer}` : ''} · ${fmtDateTime(t.updated_at)}</div>
     ${t.last ? html`<div class="muted" style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.last.body}</div>` : ''}</div>${statusTag(t)}</a>`)}</div>`
   : empty('chat', 'No conversations', 'Questions about a booking or a venue? Start a conversation.');
 
@@ -29,8 +29,8 @@ export async function supportNewView(main, _p, query) {
         ${bookings.map(b => html`<option value="${b.id}" ${b.id === pre ? 'selected' : ''}>${b.venue.name} · ${fmtDate(b.date)} ${fmtRange(b.startTime, b.endTime)} · ${b.ref}</option>`)}</select>
         <div class="hint">Linking a booking sends your message to that venue's team.</div></div>
       <fieldset class="field" style="border:0;padding:0" id="kind-f"><legend class="label">Type</legend>
-        <label class="check"><input type="radio" name="kind" value="support" checked>Question or problem — the venue or TurfConnect will reply</label>
-        <label class="check"><input type="radio" name="kind" value="dispute">Dispute — escalate to TurfConnect to review a refund or charge</label></fieldset>
+        <label class="check"><input type="radio" name="kind" value="support" checked>Question or problem — the venue or Thidal will reply</label>
+        <label class="check"><input type="radio" name="kind" value="dispute">Dispute — escalate to Thidal to review a refund or charge</label></fieldset>
       <div class="field"><label for="subj">Subject</label><input id="subj" maxlength="120" required></div>
       <div class="field"><label for="msg">Message</label><textarea id="msg" maxlength="2000" required></textarea></div>
       <p class="form-error" id="err" role="alert"></p>
@@ -60,7 +60,7 @@ export async function supportThreadView(main, { id }) {
     mount(main, html`
       <a class="btn ghost small" href="${t.access === 'admin' ? '#/admin/support' : t.access === 'venue' ? `#/owner/${t.venue_id}/support` : '#/support'}" style="margin-left:-8px">${icon('back')}Back</a>
       <div class="row between"><h1 style="margin:0">${t.subject}</h1>${statusTag(t)}</div>
-      <p class="faint">${t.kind === 'dispute' ? 'Dispute · reviewed by TurfConnect' : t.venue ? `With ${t.venue}` : 'With TurfConnect support'}${t.booking ? ` · Booking ${t.booking.ref} (${fmtDate(t.booking.date)} ${fmtRange(t.booking.start_time, t.booking.end_time)})` : ''}</p>
+      <p class="faint">${t.kind === 'dispute' ? 'Dispute · reviewed by Thidal' : t.venue ? `With ${t.venue}` : 'With Thidal support'}${t.booking ? ` · Booking ${t.booking.ref} (${fmtDate(t.booking.date)} ${fmtRange(t.booking.start_time, t.booking.end_time)})` : ''}</p>
       ${t.access === 'customer' && t.booking ? html`<a class="btn small" href="#/booking/${t.booking.id}">View booking</a>` : ''}
       <div class="thread section" aria-live="polite">${t.messages.map(m => html`<div class="bubble ${m.mine ? 'mine' : ''}"><div class="who">${m.mine ? 'You' : m.side === 'customer' ? m.name : `${m.name} · ${m.side}`}</div>
         <div style="white-space:pre-wrap">${m.body}</div><div class="faint">${fmtDateTime(m.created_at)}</div></div>`)}</div>

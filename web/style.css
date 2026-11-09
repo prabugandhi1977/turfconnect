@@ -1,4 +1,4 @@
-/* TurfConnect design tokens, following the Vayal design language: leaf green and turmeric on a soft field-green paper,
+/* Thidal design tokens, following the Vayal design language: leaf green and turmeric on a soft field-green paper,
    Bricolage Grotesque for display, Mukta Malar for body text (covers Tamil), IBM Plex Mono for numbers.
    Light by default; dark via OS preference or the in-app toggle (data-theme). */
 :root {
@@ -815,3 +815,12 @@ h1 { font-size: 1.7rem; line-height: 1.15; } h2 { font-size: 1.2rem; } h3 { font
   .turf, .turf.collapsed { grid-template-columns: minmax(0, 1fr); }
   .turf .games { display: none; }
 }
+
+/* Brand: Thidal with its Tamil name beside it, as Vayal shows வயல் */
+.logo-text .ta { font-family: "Mukta Malar", var(--f-body); font-weight: 700; color: var(--brand); margin-left: 2px; }
+.side-brand .brand { font-size: 1.6rem; }
+.side-brand p { letter-spacing: .14em; }
+.seg.labelled button { width: auto; gap: 6px; padding: 0 12px; display: inline-flex; align-items: center; font: 600 .86rem var(--f-body); }
+.top-theme { display: none; border: 1px solid var(--border); background: var(--surface); }
+.top-theme button[aria-pressed="true"] { background: var(--surface-2); box-shadow: none; }
+@media (min-width: 1000px) { .top-theme { display: inline-flex; } .side-foot { display: none; } }

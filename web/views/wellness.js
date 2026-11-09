@@ -69,7 +69,7 @@ export async function wellnessView(main) {
 export async function sessionDetailView(main, { id }) {
   mount(main, html`<div class="skeleton sk-block"></div>${skeleton('line', 4)}`);
   const s = await api(`/wellness/sessions/${encodeURIComponent(id)}`);
-  document.title = `${s.title} · TurfConnect`;
+  document.title = `${s.title} · Thidal`;
   const today = todayIn(), full = s.seatsLeft === 0, started = s.startAt <= Date.now();
   mount(main, html`
     <a href="#/wellness" class="btn ghost small no-print" style="margin-left:-8px">${icon('back')}All classes</a>

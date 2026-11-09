@@ -39,7 +39,7 @@ function wireShell(main) {
 export async function homeView(main) {
   mount(main, skeleton('block', 2));
   const site = await getSite(), v = site.venue, today = todayIn();
-  document.title = `${v.name} · TurfConnect`;
+  document.title = `${v.name} · Thidal`;
   mount(main, shell(site, null)); wireShell(main);
   const c = $('#content', main);
   const when = new Intl.DateTimeFormat('en-IN', { timeZone: v.timezone || 'Asia/Kolkata', day: 'numeric', month: 'long' }).format(new Date());

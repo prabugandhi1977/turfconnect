@@ -66,7 +66,7 @@ function renderShell(path = currentPath().path) {
   const closed = closedGroups();
   mount($('#side'), html`
     <div class="side-brand"><a class="brand" href="#/" data-go><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="1.5"/><path d="M12 6v12"/><circle cx="12" cy="12" r="2.4"/></svg></span>
-      <span class="logo-text">TurfConnect</span></a><p>Turf · play · train</p>
+      <span class="logo-text">Thidal <span class="ta" lang="ta">திடல்</span></span></a><p>Play. Train. Belong.</p>
       <button type="button" class="icon-btn side-close" data-close-side aria-label="Close menu">${icon('x')}</button></div>
     <nav class="side-nav" aria-label="Sections">${GROUPS(site).map(([title, items]) => html`<div class="side-group" ${closed.includes(title) ? html`data-closed` : ''}>
       <button type="button" class="side-h" data-group="${title}" aria-expanded="${!closed.includes(title)}">${title}${icon('chevron')}</button>
@@ -87,11 +87,18 @@ function renderStatus() {
     <span class="st-where"><small>${v.name}</small><b>${v.address.split(',').slice(-2).join(',').trim() || v.city}</b></span>`);
 }
 function mountActions(me) {
+  // Desktop top bar carries a labelled theme switch, as on Vayal; phones use the one in the drawer.
   mount($('#topbar-actions'), html`
+    <div class="seg labelled top-theme" role="group" aria-label="Colour theme">${[['light', 'sun', 'Light'], ['dark', 'moon', 'Dark'], ['system', 'monitor', 'Auto']].map(([k, ic, l]) => html`
+      <button type="button" data-theme-set="${k}" aria-pressed="${themeNow() === k}">${icon(ic)}<span>${l}</span></button>`)}</div>
     ${me ? html`<a class="icon-btn" href="#/notifications" aria-label="Notifications${unread ? `, ${unread} unread` : ''}">${icon('bell')}${unread ? html`<span class="badge-dot">${unread > 9 ? '9+' : unread}</span>` : ''}</a>
       <a class="avatar-btn" href="#/profile" aria-label="Your account">${(me.name || me.email || '?').trim()[0].toUpperCase()}</a>`
       : html`<a class="btn small" href="#/login">Sign in</a>`}`);
 }
+$('#topbar-actions').addEventListener('click', e => {
+  const th = e.target.closest('[data-theme-set]');
+  if (th) { store.set('tc.theme', th.dataset.themeSet); applyTheme(); renderShell(); }
+});
 // Sidebar interactions are wired once; the sidebar's contents are re-rendered on every route change.
 const sideEl = () => $('#side');
 function setDrawer(open) {
@@ -209,7 +216,7 @@ async function loginView(main, _p, query) {
       }
       const name = $('#name', main).value.trim();
       if (name.length < 2) return fail('Enter your name');
-      await busy(btn, async () => { setMe(await api('/me', { method: 'PATCH', body: { name } })); toast('Welcome to TurfConnect!'); go(next); });
+      await busy(btn, async () => { setMe(await api('/me', { method: 'PATCH', body: { name } })); toast('Welcome to Thidal!'); go(next); });
     });
   };
   draw(); wire();
@@ -221,7 +228,7 @@ async function profileView(main) {
   const [me, coupons] = await Promise.all([api('/me'), api('/me/coupons').catch(() => [])]);
   setMe(me);
   const theme = store.get('tc.theme', 'system');
-  const shareText = `Book sports turfs on TurfConnect. Sign up with my code ${me.referralCode} and I get a reward after your first game.`;
+  const shareText = `Book sports turfs on Thidal. Sign up with my code ${me.referralCode} and I get a reward after your first game.`;
   mount(main, html`
     <h1>${me.name || 'Your profile'}</h1>
     <div class="grid-2">
@@ -246,14 +253,14 @@ async function profileView(main) {
         <div class="field"><span class="label" id="theme-l">Theme</span><div class="chips wrap" role="group" aria-labelledby="theme-l">
           ${['system', 'light', 'dark'].map(t => html`<button class="chip" data-theme-opt="${t}" aria-pressed="${t === theme}">${t === 'system' ? 'Match device' : t[0].toUpperCase() + t.slice(1)}</button>`)}</div></div>
         ${'Notification' in window ? html`<div class="field"><span class="label">Alerts on this device</span>
-          ${Notification.permission === 'granted' ? html`<p class="faint">On. You'll get booking alerts while TurfConnect is open in the background.</p>`
+          ${Notification.permission === 'granted' ? html`<p class="faint">On. You'll get booking alerts while Thidal is open in the background.</p>`
             : Notification.permission === 'denied' ? html`<p class="faint">Blocked in your browser settings.</p>` : html`<button class="btn small" id="notif">${icon('bell')}Turn on alerts</button>`}</div>` : ''}
       </div>
     </div>
     <div class="section card">
       <h2>${icon('building')} For venue owners</h2>
       ${me.venues.length ? html`<div class="list">${me.venues.map(v => html`<a class="list-item" href="#/owner/${v.id}"><div class="grow"><div class="title">${v.name}</div><div class="faint">${v.role.replace('_', ' ')} · ${v.status}</div></div>${icon('back')}</a>`)}</div>`
-        : html`<p class="muted">Own a turf or court? List it on TurfConnect to take online bookings and payments.</p>`}
+        : html`<p class="muted">Own a turf or court? List it on Thidal to take online bookings and payments.</p>`}
       <a class="btn" href="#/owner/new" style="margin-top:12px">${icon('plus')}List a venue</a>
     </div>
     <div class="section row">
@@ -262,7 +269,7 @@ async function profileView(main) {
     </div>`);
   $('#name-form').addEventListener('submit', async e => { e.preventDefault(); await busy(e.submitter, async () => { setMe(await api('/me', { method: 'PATCH', body: { name: $('#pname').value } })); toast('Saved'); }); });
   $('#share').onclick = async () => {
-    if (navigator.share) { try { await navigator.share({ title: 'TurfConnect', text: shareText, url: location.origin }); } catch {} }
+    if (navigator.share) { try { await navigator.share({ title: 'Thidal', text: shareText, url: location.origin }); } catch {} }
     else { try { await navigator.clipboard.writeText(shareText + ' ' + location.origin); toast('Invite copied to clipboard'); } catch { toast(shareText); } }
   };
   $$('[data-theme-opt]', main).forEach(b => { b.onclick = () => { store.set('tc.theme', b.dataset.themeOpt); applyTheme(); profileView(main); renderShell('/profile'); }; });

@@ -2,7 +2,7 @@
   "name": "turfconnect",
   "version": "0.1.0",
   "private": true,
-  "description": "TurfConnect: book sports turfs in under two minutes; run your venue from one dashboard.",
+  "description": "Thidal: book sports turfs in under two minutes; run your venue from one dashboard.",
   "type": "module",
   "scripts": {
     "start": "node server/server.js",

@@ -62,7 +62,7 @@ export async function coachesView(main) {
 export async function coachProfileView(main, { id }) {
   mount(main, html`<div class="skeleton sk-block"></div>${skeleton('line', 5)}`);
   const c = await api(`/coaches/${encodeURIComponent(id)}`);
-  document.title = `${c.name} · TurfConnect`;
+  document.title = `${c.name} · Thidal`;
   const today = todayIn(), pick = { date: c.nextSlot?.date || today, start: '' };
   const total = c.reviews || 0;
   mount(main, html`<a href="#/coaches" class="btn ghost small" style="margin-left:-8px">${icon('back')}All coaches</a>

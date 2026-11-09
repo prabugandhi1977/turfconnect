@@ -38,7 +38,7 @@ export async function vendingListView(main) {
 export async function machineView(main, { id }) {
   mount(main, html`<div class="skeleton sk-block"></div>${skeleton('line', 4)}`);
   const m = await api(`/vending/machines/${encodeURIComponent(id)}`);
-  document.title = `${m.name} · TurfConnect`;
+  document.title = `${m.name} · Thidal`;
   const cart = new Map();                       // itemId -> qty
   const canOrder = m.status === 'online';
   const byId = Object.fromEntries(m.items.map(i => [i.id, i]));

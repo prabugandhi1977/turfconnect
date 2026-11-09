@@ -68,8 +68,8 @@ async function overviewPane(ctx) {
   const { vid, venue, role, pane } = ctx;
   const o = await api(`/owner/venues/${vid}/overview`);
   mount(pane, html`
-    ${venue.status === 'pending' ? html`<div class="notice warn">${icon('clock')}<div><b>Your venue is being verified.</b> TurfConnect usually reviews new venues within one working day. You can finish setting up courts, prices and photos meanwhile.</div></div>` : ''}
-    ${venue.status === 'suspended' || venue.status === 'rejected' ? html`<div class="notice bad">${icon('alert')}<div><b>${venue.status === 'suspended' ? 'Bookings are paused.' : 'Your application needs changes.'}</b> ${o.statusNote || ''} Contact TurfConnect support to resolve this.</div></div>` : ''}
+    ${venue.status === 'pending' ? html`<div class="notice warn">${icon('clock')}<div><b>Your venue is being verified.</b> Thidal usually reviews new venues within one working day. You can finish setting up courts, prices and photos meanwhile.</div></div>` : ''}
+    ${venue.status === 'suspended' || venue.status === 'rejected' ? html`<div class="notice bad">${icon('alert')}<div><b>${venue.status === 'suspended' ? 'Bookings are paused.' : 'Your application needs changes.'}</b> ${o.statusNote || ''} Contact Thidal support to resolve this.</div></div>` : ''}
     <h2 style="margin-top:12px">Today · ${fmtLongDate(o.today)}</h2>
     <div class="kpis">
       ${kpi('Bookings today', o.todayBookings, `${o.checkedIn} checked in`)}
@@ -156,7 +156,7 @@ function manualBookingSheet(ctx, { courtId, date, start }, onDone) {
       <div class="field"><label for="m-start">Start</label><select id="m-start" name="start">${starts.map(t => html`<option value="${t}" ${t === start ? 'selected' : ''}>${fmtTime(t)}</option>`)}</select></div>
       <div class="field"><label for="m-len">Duration</label><select id="m-len" name="len">${[1, 2, 3, 4].map(n => html`<option value="${n}">${plural(n * venue.slot_minutes / 60, 'hour')}</option>`)}</select></div>
       <div class="field"><label for="m-name">Customer name</label><input id="m-name" name="customerName" required autocomplete="off"></div>
-      <div class="field"><label for="m-phone">Phone (optional)</label><input id="m-phone" name="customerPhone" type="tel" autocomplete="off"><div class="hint">If they have a TurfConnect account, they get the booking in their app.</div></div>
+      <div class="field"><label for="m-phone">Phone (optional)</label><input id="m-phone" name="customerPhone" type="tel" autocomplete="off"><div class="hint">If they have a Thidal account, they get the booking in their app.</div></div>
       <div class="field"><label for="m-method">Payment</label><select id="m-method" name="method">${['cash', 'upi', 'card_terminal', 'unpaid', 'complimentary'].map(m => html`<option value="${m}">${titleCase(m)}</option>`)}</select></div>
       <div class="field"><label for="m-amt">Amount charged (₹)</label><input id="m-amt" name="amount" type="number" min="0" step="1" placeholder="Standard price" inputmode="decimal"></div></div>
       <div class="field"><label for="m-notes">Notes</label><input id="m-notes" name="notes" maxlength="300"></div>
@@ -327,14 +327,14 @@ async function reviewsPane(ctx) {
   const avg = list.length ? (list.reduce((a, r) => a + r.rating, 0) / list.length).toFixed(1) : '—';
   mount(pane, html`<div class="kpis" style="margin-bottom:12px">${kpi('Average rating', avg)}${kpi('Reviews', list.length)}${kpi('Awaiting reply', list.filter(r => !r.owner_reply).length)}</div>
     ${list.length ? html`<div class="list">${list.map(r => html`<div class="card"><div class="row between"><b>${r.name}</b><span>${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span></div>
-      <div class="faint">${fmtDate(r.date)} · ${r.ref}${r.hidden ? ' · hidden by TurfConnect' : ''}</div>${r.comment ? html`<p style="margin:6px 0">${r.comment}</p>` : ''}
+      <div class="faint">${fmtDate(r.date)} · ${r.ref}${r.hidden ? ' · hidden by Thidal' : ''}</div>${r.comment ? html`<p style="margin:6px 0">${r.comment}</p>` : ''}
       ${r.owner_reply ? html`<div class="owner-reply"><b>Your reply</b><br>${r.owner_reply}</div>` : can(role, 'manager') ? html`<form class="row nowrap" data-reply="${r.id}" style="margin-top:8px"><label class="sr-only" for="rp-${r.id}">Reply</label><input id="rp-${r.id}" placeholder="Write a public reply…" required><button class="btn small">Reply</button></form>` : ''}</div>`)}</div>`
       : empty('star', 'No reviews yet', 'Players can review after their game.')}`);
   on(pane, 'submit', '[data-reply]', (e, f) => { e.preventDefault(); busy(e.submitter, async () => { await api(`/owner/venues/${vid}/reviews/${f.dataset.reply}/reply`, { method: 'POST', body: { reply: $('input', f).value } }); toast('Reply posted'); repaint(ctx, reviewsPane); }); });
 }
 
 async function supportPane({ vid, pane }) {
-  mount(pane, html`<p class="muted">Questions from players about this venue. Disputes about charges go to TurfConnect support.</p>${ticketList(await api(`/support/tickets?view=venue&venue=${vid}`))}`);
+  mount(pane, html`<p class="muted">Questions from players about this venue. Disputes about charges go to Thidal support.</p>${ticketList(await api(`/support/tickets?view=venue&venue=${vid}`))}`);
 }
 
 // ---- Pricing, hours, closures ---------------------------------------------------------------------------------------
@@ -891,7 +891,7 @@ async function refundsPane(ctx) {
       ${list.filter(r => r.status !== 'pending').map(r => html`<tr><td>${fmtDateTime(r.created_at)}</td><td>${r.ref}</td><td>${r.customer}</td><td>${titleCase(r.origin)}</td><td style="white-space:normal;min-width:200px">${r.reason}${r.decision_note ? html`<div class="faint">${r.decision_note}</div>` : ''}</td>
         <td class="num">${money(r.amount)}</td><td><span class="tag ${r.status === 'processed' ? 'good' : 'bad'}">${titleCase(r.status)}</span></td></tr>`)}</tbody></table></div>` : html`<p class="faint">No refunds yet.</p>`}`);
   on(pane, 'click', '[data-approve]', async (_e, b) => { const note = await confirmDialog('The money goes back to the customer\'s original payment method.', { title: 'Approve refund?', confirmLabel: 'Approve', input: { label: 'Note to customer (optional)' } }); if (note !== null) { try { await api(`/owner/venues/${vid}/refunds/${b.dataset.approve}/approve`, { method: 'POST', body: { note } }); toast('Refund issued'); repaint(ctx, refundsPane); } catch (e) { toast(e.message, 'bad'); } } });
-  on(pane, 'click', '[data-reject]', async (_e, b) => { const note = await confirmDialog('The customer can escalate to TurfConnect if they disagree.', { title: 'Decline refund?', confirmLabel: 'Decline', danger: true, input: { label: 'Reason (sent to the customer)', required: true } }); if (note) { try { await api(`/owner/venues/${vid}/refunds/${b.dataset.reject}/reject`, { method: 'POST', body: { note } }); toast('Request declined'); repaint(ctx, refundsPane); } catch (e) { toast(e.message, 'bad'); } } });
+  on(pane, 'click', '[data-reject]', async (_e, b) => { const note = await confirmDialog('The customer can escalate to Thidal if they disagree.', { title: 'Decline refund?', confirmLabel: 'Decline', danger: true, input: { label: 'Reason (sent to the customer)', required: true } }); if (note) { try { await api(`/owner/venues/${vid}/refunds/${b.dataset.reject}/reject`, { method: 'POST', body: { note } }); toast('Request declined'); repaint(ctx, refundsPane); } catch (e) { toast(e.message, 'bad'); } } });
 }
 
 // ---- Reports ---------------------------------------------------------------------------------------------------------
@@ -970,7 +970,7 @@ async function payoutsPane({ vid, pane }) {
   mount(pane, html`<div class="kpis">${kpi('Not yet settled', money(p.unsettled.gross - p.unsettled.refunds), `Online takings${p.settledThrough ? ` after ${fmtDate(p.settledThrough)}` : ''}, before commission`)}
       ${kpi('Paid out to date', money(p.payouts.filter(x => x.status === 'paid').reduce((a, x) => a + x.net, 0)))}
       ${kpi('Payout account', p.account.bank ? `•••• ${p.account.last4}` : 'Not set', `${p.account.holder} · ${p.account.bank}`)}</div>
-    <p class="faint section">TurfConnect settles online payments for each closed period, minus refunds and the platform commission. Cash and UPI taken at your desk stay with you and are not part of payouts.</p>
+    <p class="faint section">Thidal settles online payments for each closed period, minus refunds and the platform commission. Cash and UPI taken at your desk stay with you and are not part of payouts.</p>
     ${p.payouts.length ? html`<div class="table-wrap"><table><thead><tr><th>Period</th><th class="num">Gross</th><th class="num">Refunds</th><th class="num">Commission</th><th class="num">Net payout</th><th>Status</th><th>Reference</th></tr></thead><tbody>
       ${p.payouts.map(x => html`<tr><td>${fmtDate(x.period_start)} – ${fmtDate(x.period_end)}</td><td class="num">${money(x.gross)}</td><td class="num">−${money(x.refunds)}</td><td class="num">−${money(x.commission)}</td><td class="num"><b>${money(x.net)}</b></td>
         <td><span class="tag ${x.status === 'paid' ? 'good' : 'warn'}">${titleCase(x.status)}</span></td><td>${x.reference || '—'}</td></tr>`)}</tbody></table></div>` : empty('cash', 'No payouts yet', 'Your first settlement appears after your first week of online bookings.')}`);
@@ -1080,7 +1080,7 @@ export async function ownerNew(main) {
   const save = () => store.set('tc.onboard', d);
   const draw = () => {
     mount(main, html`<div style="max-width:720px;margin:0 auto">
-      <h1>List your venue on TurfConnect</h1>
+      <h1>List your venue on Thidal</h1>
       <ol class="steps">${STEPS.map((s, i) => html`<li class="${i < d.step ? 'done' : i === d.step ? 'current' : ''}" ${i === d.step ? raw('aria-current="step"') : ''}>${s}</li>`)}</ol>
       <form class="card" id="wf" novalidate>${[businessStep, venueStep, courtsStep, reviewStep][d.step]()}
         <p class="form-error" id="werr" role="alert"></p>
@@ -1120,7 +1120,7 @@ export async function ownerNew(main) {
     <dl class="kv"><dt>Business</dt><dd>${d.business.business_name}</dd><dt>Payout</dt><dd>${d.business.payout_bank} •••• ${d.business.payout_last4}</dd>
       <dt>Venue</dt><dd>${d.venue.name}</dd><dt>Address</dt><dd>${d.venue.address}, ${d.venue.city}</dd><dt>Hours</dt><dd>${fmtTime(d.venue.open_time)} – ${fmtTime(d.venue.close_time)}</dd>
       <dt>Courts</dt><dd>${d.courts.map(c => `${c.name} (₹${c.basePrice})`).join(', ')}</dd></dl>
-    <div class="notice section">${icon('info')}<div>TurfConnect verifies new venues, usually within one working day. Once approved, your venue becomes searchable and bookable. The platform commission is deducted from online payments at settlement.</div></div>`;
+    <div class="notice section">${icon('info')}<div>Thidal verifies new venues, usually within one working day. Once approved, your venue becomes searchable and bookable. The platform commission is deducted from online payments at settlement.</div></div>`;
   const collect = () => {
     const f = $('#wf', main);
     if (d.step === 0) d.business = formData(f);

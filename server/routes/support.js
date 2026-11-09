@@ -68,7 +68,7 @@ export default function supportRoutes(r) {
     const t = load(u, params.id);
     const booking = t.booking_id ? one('SELECT id, ref, date, start_time, end_time, amount, status FROM bookings WHERE id=?', t.booking_id) : null;
     const messages = all(`SELECT m.id, m.body, m.created_at, m.author_id, u.name, u.role FROM support_messages m JOIN users u ON u.id=m.author_id WHERE m.ticket_id=? ORDER BY m.created_at`, t.id)
-      .map(m => ({ ...m, mine: m.author_id === u.id, side: m.author_id === t.user_id ? 'customer' : m.role === 'admin' ? 'TurfConnect support' : 'Venue team' }));
+      .map(m => ({ ...m, mine: m.author_id === u.id, side: m.author_id === t.user_id ? 'customer' : m.role === 'admin' ? 'Thidal support' : 'Venue team' }));
     return { ...t, access: access(u, t), booking, messages, venue: t.venue_id ? one('SELECT name FROM venues WHERE id=?', t.venue_id)?.name : null };
   });
 
@@ -85,12 +85,12 @@ export default function supportRoutes(r) {
   r.post('/support/tickets/:id/resolve', ({ u, params, body }) => transaction(() => {
     const t = load(u, params.id);
     const role = access(u, t);
-    if (t.kind === 'dispute' && role !== 'admin') forbidden('Only TurfConnect support can resolve a dispute');
+    if (t.kind === 'dispute' && role !== 'admin') forbidden('Only Thidal support can resolve a dispute');
     if (t.status !== 'open') conflict('Already resolved');
     const resolution = str(body.resolution, 'Resolution', { min: 3, max: 1000 });
     let refund = null;
     if (body.refundAmount) {
-      if (role !== 'admin') forbidden('Only TurfConnect support can issue refunds from a conversation');
+      if (role !== 'admin') forbidden('Only Thidal support can issue refunds from a conversation');
       const b = one('SELECT * FROM bookings WHERE id=?', t.booking_id);
       if (!b) bad('This conversation is not linked to a booking');
       refund = issueRefund(b, int(Math.round(Number(body.refundAmount) * 100), 'Refund', { min: 1 }), { origin: 'admin', actorId: u.id, reason: `Dispute resolution: ${resolution}` });

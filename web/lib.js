@@ -34,7 +34,7 @@ export async function api(path, { method = 'GET', body, idempotencyKey } = {}) {
   if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
   let res;
   try { res = await fetch('/api' + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
-  catch { throw new ApiError(navigator.onLine ? 'Could not reach TurfConnect. Check your connection and try again.' : 'You are offline. Reconnect to continue.', 0, 'network'); }
+  catch { throw new ApiError(navigator.onLine ? 'Could not reach Thidal. Check your connection and try again.' : 'You are offline. Reconnect to continue.', 0, 'network'); }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && state.token) { clearSession(); }
   if (!res.ok) throw new ApiError(data.error || `Request failed (${res.status})`, res.status, data.code);
@@ -179,7 +179,7 @@ export async function resolveRoute() {
   // Each view renders into a fresh container, so listeners a view attaches never leak into the next one.
   const main = document.createElement('div');
   shell.replaceChildren(main);
-  document.title = r.title ? `${r.title} · TurfConnect` : 'TurfConnect — Book sports turfs near you';
+  document.title = r.title ? `${r.title} · Thidal` : 'Thidal · திடல் — Play. Train. Belong.';
   try { await r.view(main, params, query); }
   catch (e) { console.error(e); mount(main, errorView(e)); $('[data-retry]', main)?.addEventListener('click', resolveRoute); }
   if (!r.keepScroll) window.scrollTo(0, 0);

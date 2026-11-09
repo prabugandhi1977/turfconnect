@@ -1,4 +1,4 @@
-# TurfConnect: API and web app in one container. The SQLite database and uploaded photos live on /data.
+# Thidal: API and web app in one container. The SQLite database and uploaded photos live on /data.
 FROM node:22-alpine
 RUN apk add --no-cache su-exec
 WORKDIR /app
