@@ -781,3 +781,81 @@ test('managers add a webcam test camera and delete cameras; used gates are kept'
   const fresh = await api(`${base}/points`, { token: tokens.manager, method: 'POST', body: { name: 'Spare door', kind: 'door' } });
   assert.equal((await api(`${base}/points/${fresh.data.id}`, { token: tokens.manager, method: 'DELETE' })).status, 200, 'a gate with no history can go');
 });
+
+// ---- Shop and rentals ------------------------------------------------------------------------------------------------
+async function storePay(token, orderId, outcome = 'success') {
+  const pay = await api(`/store/orders/${orderId}/pay`, { token, method: 'POST' });
+  assert.equal(pay.status, 200, JSON.stringify(pay.data));
+  assert.equal((await api(`/payments/sandbox/${pay.data.intentId}/complete`, { token, method: 'POST', body: { outcome } })).status, 200);
+  return pay.data;
+}
+const storeItem = name => one('SELECT * FROM store_items WHERE venue_id=? AND name=?', venue.id, name);
+
+test('shop: buy with a size, pay by webhook, collect at the desk with the code', async () => {
+  const jersey = storeItem('Thidal home jersey');
+  const noSize = await api('/store/orders', { token: tokens.p2, method: 'POST', body: { venueId: venue.id, kind: 'purchase', items: [{ itemId: jersey.id, qty: 1 }] } });
+  assert.equal(noSize.status, 400, 'size is required for sized items');
+  const o = await api('/store/orders', { token: tokens.p2, method: 'POST', body: { venueId: venue.id, kind: 'purchase', items: [{ itemId: jersey.id, qty: 2, size: 'M' }] } });
+  assert.equal(o.status, 201, JSON.stringify(o.data));
+  assert.equal(o.data.amount, jersey.sale_price * 2);
+  await storePay(tokens.p2, o.data.id);
+  const paid = await waitFor(async () => { const r = await api(`/store/orders/${o.data.id}`, { token: tokens.p2 }); return r.data.status === 'paid' && r.data; });
+  assert.ok(paid, 'order paid');
+  assert.match(paid.pickupCode, /^\d{6}$/);
+  assert.equal((await api(`/owner/venues/${venue.id}/store/handover`, { token: tokens.p2, method: 'POST', body: { code: paid.pickupCode } })).status, 404, 'players cannot hand over');
+  const handed = await api(`/owner/venues/${venue.id}/store/handover`, { token: tokens.desk, method: 'POST', body: { code: paid.pickupCode } });
+  assert.equal(handed.status, 200, JSON.stringify(handed.data));
+  assert.equal(handed.data.status, 'collected');
+  assert.equal(storeItem('Thidal home jersey').stock, jersey.stock - 2, 'stock goes down on collection');
+});
+
+test('shop: stock held by unpaid orders cannot be oversold', async () => {
+  const book = storeItem('Badminton footwork, step by step');
+  run('UPDATE store_items SET stock=1 WHERE id=?', book.id);
+  const first = await api('/store/orders', { token: tokens.p2, method: 'POST', body: { venueId: venue.id, kind: 'purchase', items: [{ itemId: book.id }] } });
+  assert.equal(first.status, 201);
+  const second = await api('/store/orders', { token: tokens.player, method: 'POST', body: { venueId: venue.id, kind: 'purchase', items: [{ itemId: book.id }] } });
+  assert.equal(second.status, 409);
+  await api(`/store/orders/${first.data.id}/cancel`, { token: tokens.p2, method: 'POST' });
+  const third = await api('/store/orders', { token: tokens.player, method: 'POST', body: { venueId: venue.id, kind: 'purchase', items: [{ itemId: book.id }] } });
+  assert.equal(third.status, 201, 'cancelling releases the stock');
+  await api(`/store/orders/${third.data.id}/cancel`, { token: tokens.player, method: 'POST' });
+});
+
+test('rentals: the same unit cannot be hired twice for overlapping days; return refunds the deposit', async () => {
+  const kit = storeItem('Cricket kit (bat, pads, gloves, helmet)');
+  run('UPDATE store_items SET rent_stock=1 WHERE id=?', kit.id);
+  const today = zonedParts(Date.now(), venue.timezone).date;
+  const a = await api('/store/orders', { token: tokens.p2, method: 'POST', body: { venueId: venue.id, kind: 'rental', startDate: today, items: [{ itemId: kit.id }] } });
+  assert.equal(a.status, 201, JSON.stringify(a.data));
+  assert.equal(a.data.deposit, kit.deposit);
+  assert.equal(a.data.amount, kit.rent_price + kit.deposit);
+  const clash = await api('/store/orders', { token: tokens.player, method: 'POST', body: { venueId: venue.id, kind: 'rental', startDate: today, items: [{ itemId: kit.id }] } });
+  assert.equal(clash.status, 409, 'only one kit exists');
+  const nextDay = await api('/store/orders', { token: tokens.player, method: 'POST', body: { venueId: venue.id, kind: 'rental', startDate: addDays(today, 1), items: [{ itemId: kit.id }] } });
+  assert.equal(nextDay.status, 201, 'a different day is free');
+  await api(`/store/orders/${nextDay.data.id}/cancel`, { token: tokens.player, method: 'POST' });
+  const perGame = await api('/store/orders', { token: tokens.player, method: 'POST', body: { venueId: venue.id, kind: 'rental', startDate: addDays(today, 2), days: 3, items: [{ itemId: kit.id }] } });
+  assert.equal(perGame.status, 400, 'per-game items are hired one day at a time');
+
+  await storePay(tokens.p2, a.data.id);
+  const paid = await waitFor(async () => { const r = await api(`/store/orders/${a.data.id}`, { token: tokens.p2 }); return r.data.status === 'paid' && r.data; });
+  const out = await api(`/owner/venues/${venue.id}/store/handover`, { token: tokens.desk, method: 'POST', body: { code: paid.pickupCode } });
+  assert.equal(out.data.status, 'out');
+  const noNote = await api(`/owner/venues/${venue.id}/store/orders/${a.data.id}/return`, { token: tokens.desk, method: 'POST', body: { keep: 200 } });
+  assert.equal(noNote.status, 400, 'keeping part of a deposit needs a reason');
+  const back = await api(`/owner/venues/${venue.id}/store/orders/${a.data.id}/return`, { token: tokens.desk, method: 'POST', body: { keep: 200, note: 'Helmet strap torn' } });
+  assert.equal(back.status, 200, JSON.stringify(back.data));
+  assert.equal(back.data.status, 'returned');
+  const p = one('SELECT * FROM store_payments WHERE order_id=?', a.data.id);
+  assert.equal(p.refunded, kit.deposit - 20000, 'deposit refunded less the ₹200 kept');
+  assert.equal(p.status, 'partially_refunded');
+});
+
+test('shop: a failed payment releases the order', async () => {
+  const bar = storeItem('Energy bar');
+  const o = await api('/store/orders', { token: tokens.p2, method: 'POST', body: { venueId: venue.id, kind: 'purchase', items: [{ itemId: bar.id, qty: 3 }] } });
+  await storePay(tokens.p2, o.data.id, 'failure');
+  const failed = await waitFor(async () => (await api(`/store/orders/${o.data.id}`, { token: tokens.p2 })).data.status === 'failed');
+  assert.ok(failed);
+});

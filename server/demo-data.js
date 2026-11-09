@@ -141,6 +141,38 @@ export function seedDemo() {
       if (state === 'fault') run("INSERT INTO vending_faults (id,machine_id,code,message,severity,opened_at) VALUES (?,?,'COIL_JAM','Spiral A2 is jammed','critical',?)", id(), mid, Date.now() - 12 * 60000);
     }
 
+    // Front-desk shop and rentals: [category, name, emoji, sport, sizes, sale ₹, stock, hire ₹, per, deposit ₹, units, description]
+    const STORE = [
+      ['accessories', 'Grip tape (3 rolls)', '🎾', 'tennis', '', 199, 24, null, 'game', 0, 0, 'Tacky overgrip for tennis and badminton racquets.'],
+      ['accessories', 'Shuttlecocks, tube of 6', '🏸', 'badminton', '', 450, 18, null, 'game', 0, 0, 'Feather shuttles, tournament speed.'],
+      ['accessories', 'Tennis balls, can of 3', '🎾', 'tennis', '', 399, 15, null, 'game', 0, 0, 'Pressurised all-court balls.'],
+      ['accessories', 'Shin guards', '🦵', 'football', 'S,M,L', 699, 10, null, 'game', 0, 0, 'Lightweight guards with ankle sleeves.'],
+      ['accessories', 'Swim goggles', '🥽', 'swimming', '', 799, 12, null, 'game', 0, 0, 'Anti-fog, UV-protected lenses.'],
+      ['accessories', 'Steel water bottle 750 ml', '🧴', null, '', 349, 30, null, 'game', 0, 0, 'Keeps water cold through a full game.'],
+      ['clothing', 'Thidal home jersey', '👕', 'football', 'S,M,L,XL', 899, 20, null, 'game', 0, 0, 'Breathable match jersey in leaf green.'],
+      ['clothing', 'Dry-fit training tee', '👕', null, 'S,M,L,XL', 599, 25, null, 'game', 0, 0, 'Quick-dry tee for training and gym.'],
+      ['clothing', 'Sports socks, 2 pairs', '🧦', null, 'S,M,L', 249, 40, null, 'game', 0, 0, 'Cushioned soles, arch support.'],
+      ['clothing', 'Swim cap', '🧢', 'swimming', '', 299, 16, null, 'game', 0, 0, 'Silicone cap, required in the pool.'],
+      ['books', 'Cricket coaching manual', '📘', 'cricket', '', 499, 6, null, 'game', 0, 0, 'Batting, bowling and fielding drills for juniors.'],
+      ['books', 'Badminton footwork, step by step', '📗', 'badminton', '', 399, 5, null, 'game', 0, 0, 'Illustrated movement patterns and drills.'],
+      ['books', 'Learn to swim (kids)', '📙', 'swimming', '', 299, 8, null, 'game', 0, 0, 'A picture book for first lessons.'],
+      ['nutrition', 'Energy bar', '🍫', null, '', 80, 50, null, 'game', 0, 0, 'Dates, oats and nuts. No added sugar.'],
+      ['nutrition', 'Electrolyte sachets, pack of 5', '💧', null, '', 150, 30, null, 'game', 0, 0, 'Lemon flavour, mix in 500 ml water.'],
+      ['equipment', 'Match football, size 5', '⚽', 'football', '', 1299, 6, 50, 'game', 300, 6, 'Hand-stitched match ball.'],
+      ['equipment', 'Badminton racquet', '🏸', 'badminton', '', null, 0, 60, 'game', 500, 10, 'Light graphite racquet, strung.'],
+      ['equipment', 'Tennis racquet', '🎾', 'tennis', '', null, 0, 100, 'game', 1000, 6, 'Mid-weight racquet, good for all levels.'],
+      ['equipment', 'Cricket kit (bat, pads, gloves, helmet)', '🏏', 'cricket', '', null, 0, 250, 'game', 1500, 4, 'Full kit for one batter.'],
+      ['equipment', 'Bibs, set of 10', '🎽', 'football', '', null, 0, 100, 'game', 300, 5, 'Two colours of five, washed after every game.'],
+      ['equipment', 'Kickboard and pull buoy', '🛟', 'swimming', '', null, 0, 40, 'game', 200, 8, 'For lap and technique training.'],
+      ['footwear', 'Turf football boots', '👟', 'football', '6,7,8,9,10', null, 0, 100, 'game', 500, 10, 'Rubber studs made for artificial grass.'],
+      ['footwear', 'Badminton court shoes', '👟', 'badminton', '6,7,8,9,10', 2499, 8, null, 'game', 0, 0, 'Non-marking soles, required on the wooden courts.'],
+      ['equipment', 'Camping chair for spectators', '🪑', null, '', null, 0, 150, 'day', 500, 6, 'Folding chair, take it home for the weekend.'],
+    ];
+    for (const [category, name, emoji, sport, sizes, sale, stock, hire, per, deposit, units, description] of STORE)
+      run(`INSERT INTO store_items (id,venue_id,category,name,description,emoji,sport,sizes,sale_price,stock,rent_price,rent_unit,deposit,rent_stock,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id(), venues.kickoff.id, category, name, description, emoji, sport, JSON.stringify(sizes ? sizes.split(',') : []),
+        sale == null ? null : sale * 100, stock, hire == null ? null : hire * 100, per, deposit * 100, units, now(), now());
+
     // Booking history: busier evenings and weekends, a few cancellations, mostly online payments.
     const priceFor = (v, court, date, start) => {
       const rules = all('SELECT * FROM price_rules WHERE venue_id=?', v.id).filter(r => r.weekdays.includes(String(weekday(date))) && toMin(start) >= toMin(r.start_time) && toMin(start) < toMin(r.end_time));

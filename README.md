@@ -164,3 +164,10 @@ These are stubbed behind adapters so they can be swapped in without touching the
 - **Web push** when the app is closed, **passkeys**, and the PRD's **AI features** are not built yet.
 - Single-instance design (SQLite, in-memory rate limiting and live-update streams). Move to PostgreSQL + Redis
   before running more than one server.
+
+## Shop and rentals (At Thidal)
+
+- **Shop** (`#/shop`): accessories, equipment, clothing (with sizes), footwear, books and nutrition. Players pay in the app and collect at the front desk with a 6-digit code (also shown as a QR). Stock is reserved while an order is unpaid or waiting to be collected, so nothing is oversold.
+- **Rent gear** (`#/rent`): boots, racquets, cricket kits, bibs and more, hired per game (same day) or per day (take-home items, up to 7 days), with a refundable deposit. A unit is counted against every day it is booked and for as long as it is out, so it is never hired twice.
+- **Front desk** (venue dashboard → Shop & rentals): hand over with the code, mark hires returned (the deposit is refunded automatically, less anything kept for damage, with a reason the player sees), refund unpaid-out orders, and edit the catalogue (managers).
+- Payments use the same signed webhook as bookings; if stock or a rental unit disappears while a player pays, they are refunded in full.

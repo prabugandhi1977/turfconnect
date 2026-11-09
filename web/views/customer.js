@@ -282,9 +282,9 @@ export async function checkoutView(main, { id }) {
 export async function payView(main, { intent }) {
   mount(main, skeleton('block', 1));
   const p = await api(`/payments/sandbox/${intent}`);
-  const afterPay = p.orderId ? `#/order/${p.orderId}` : `#/booking/${p.bookingId}`;
+  const afterPay = p.storeOrderId ? `#/shop/order/${p.storeOrderId}` : p.orderId ? `#/order/${p.orderId}` : `#/booking/${p.bookingId}`;
   if (p.status !== 'requires_payment') return go(afterPay, { replace: true });
-  mount(main, html`${p.orderId ? '' : steps(2)}<div class="gateway">
+  mount(main, html`${p.orderId || p.storeOrderId ? '' : steps(2)}<div class="gateway">
     <div class="gw-head">${icon('shield')}<div><b>TurfPay</b> <span style="opacity:.8">· Secure checkout</span></div><span class="spacer" style="flex:1"></span><span class="tag warn">Test mode</span></div>
     <div class="gw-body">
       <div class="row between"><span class="muted">Paying Thidal · ${p.venue}</span><span class="faint">Ref ${p.ref}</span></div>
@@ -293,7 +293,7 @@ export async function payView(main, { intent }) {
       <div class="chips wrap" style="margin:14px 0" aria-hidden="true"><span class="chip on">UPI</span><span class="chip">Card</span><span class="chip">Net banking</span><span class="chip">Wallet</span></div>
       <button class="btn primary block" data-outcome="success" style="min-height:52px">Simulate successful payment</button>
       <button class="btn danger block" data-outcome="failure" style="margin-top:10px">Simulate failed payment</button>
-      <p class="faint" style="text-align:center;margin-top:12px">${p.orderId ? 'Order held for' : 'Slot held for'} <span class="countdown" id="cd"></span></p>
+      <p class="faint" style="text-align:center;margin-top:12px">${p.orderId || p.storeOrderId ? 'Order held for' : 'Slot held for'} <span class="countdown" id="cd"></span></p>
     </div></div>`);
   countdown($('#cd', main), p.holdExpiresAt);
   on(main, 'click', '[data-outcome]', (_e, b) => busy(b, async () => {

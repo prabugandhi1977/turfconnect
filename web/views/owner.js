@@ -13,7 +13,7 @@ const can = (role, min) => LEVEL[role] >= LEVEL[min];
 const TABS = [
   ['overview', 'Overview', 'home', 'front_desk'], ['calendar', 'Calendar', 'calendar', 'front_desk'], ['bookings', 'Bookings', 'list', 'front_desk'],
   ['checkin', 'Check-in', 'qr', 'front_desk'], ['customers', 'Customers', 'users', 'front_desk'], ['support', 'Messages', 'chat', 'front_desk'],
-  ['reviews', 'Reviews', 'star', 'front_desk'], ['sessions', 'Wellness classes', 'bulb', 'manager'], ['vending', 'Vending machines', 'cash', 'manager'], ['surveillance', 'Surveillance', 'camera', 'front_desk'], ['access', 'Access & security', 'shield', 'front_desk'], ['media', 'Photos & videos', 'star', 'manager'], ['coaches', 'Coaches', 'users', 'manager'], ['questions', 'Questions', 'chat', 'manager'], ['pricing', 'Pricing & hours', 'tag', 'manager'], ['coupons', 'Promo codes', 'gift', 'manager'],
+  ['reviews', 'Reviews', 'star', 'front_desk'], ['sessions', 'Wellness classes', 'bulb', 'manager'], ['store', 'Shop & rentals', 'bag', 'front_desk'], ['vending', 'Vending machines', 'cash', 'manager'], ['surveillance', 'Surveillance', 'camera', 'front_desk'], ['access', 'Access & security', 'shield', 'front_desk'], ['media', 'Photos & videos', 'star', 'manager'], ['coaches', 'Coaches', 'users', 'manager'], ['questions', 'Questions', 'chat', 'manager'], ['pricing', 'Pricing & hours', 'tag', 'manager'], ['coupons', 'Promo codes', 'gift', 'manager'],
   ['refunds', 'Refunds', 'wallet', 'manager'], ['reports', 'Reports', 'chart', 'manager'], ['settings', 'Venue setup', 'settings', 'manager'],
   ['staff', 'Staff', 'users', 'owner'], ['payouts', 'Payouts', 'cash', 'owner'], ['audit', 'Audit log', 'shield', 'owner'],
 ];
@@ -468,6 +468,91 @@ async function sessionsPane(ctx) {
 }
 
 // ---- Vending machines -----------------------------------------------------------------------------------------------
+// ---- Shop and rentals: hand over with the player's code, take returns (refunding the deposit), manage the catalogue ---------
+const STORE_CATS = ['accessories', 'equipment', 'clothing', 'footwear', 'books', 'nutrition'];
+async function storePane(ctx) {
+  const { vid, role, pane } = ctx;
+  const { items, orders, summary } = await api(`/owner/venues/${vid}/store`);
+  const manager = can(role, 'manager'), base = `/owner/venues/${vid}/store`;
+  const paid = orders.filter(o => o.status === 'paid'), out = orders.filter(o => o.status === 'out'), done = orders.filter(o => !['paid', 'out'].includes(o.status)).slice(0, 15);
+  const line = o => o.items.map(i => `${i.qty}× ${i.name}${i.size ? ` (${i.size})` : ''}`).join(', ');
+  const overdue = out.filter(o => o.overdue).length;
+  mount(pane, html`
+    <div class="kpis">${kpi('To collect', summary.toCollect, 'Paid, waiting at the desk')}${kpi('Hired out now', summary.out, overdue ? `${overdue} overdue` : 'All on time')}
+      ${manager ? kpi('Shop sales (30 days)', money(summary.sales)) : ''}${manager ? kpi('Rental income (30 days)', money(summary.rentals), 'Deposits not included') : ''}</div>
+    <form class="card section row" id="hand"><label for="hcode" style="margin:0">Pickup code</label><input id="hcode" inputmode="numeric" autocomplete="off" placeholder="6-digit code or order ref" style="flex:1;min-width:180px;font-family:var(--f-mono)"><button class="btn primary">Hand over</button></form>
+    <h2 class="section">Waiting to collect</h2>
+    ${paid.length ? html`<div class="list">${paid.map(o => html`<div class="list-item"><span class="p-art small" aria-hidden="true">${o.items[0]?.emoji || '🛍️'}</span>
+      <div class="grow"><div class="title">${line(o)}</div><div class="faint">${o.customer?.name || 'Player'} · ${o.kind === 'rental' ? `Hire for ${fmtDate(o.startDate)}${o.endDate !== o.startDate ? ' – ' + fmtDate(o.endDate) : ''}` : 'Purchase'} · ${o.ref}</div></div>
+      <span class="tag good mono">${o.pickupCode}</span>${manager ? html`<button class="btn small ghost" data-refund="${o.id}">Refund</button>` : ''}</div>`)}</div>` : html`<p class="faint">Nothing waiting.</p>`}
+    <h2 class="section">Hired out</h2>
+    ${out.length ? html`<div class="list">${out.map(o => html`<div class="list-item"><span class="p-art small" aria-hidden="true">${o.items[0]?.emoji || '🎒'}</span>
+      <div class="grow"><div class="title">${line(o)}</div><div class="faint">${o.customer?.name || 'Player'}${o.customer?.phone ? html` · <a href="tel:${o.customer.phone}">${o.customer.phone}</a>` : ''} · due back ${fmtDate(o.endDate)} · deposit ${money(o.deposit)}</div></div>
+      ${o.overdue ? html`<span class="tag bad">Overdue</span>` : ''}<button class="btn small primary" data-return="${o.id}" data-deposit="${o.deposit}">Returned</button></div>`)}</div>` : html`<p class="faint">Nothing out right now.</p>`}
+    ${done.length ? html`<details class="section"><summary style="cursor:pointer;font-weight:700">Recent orders</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>When</th><th>Ref</th><th>Player</th><th>Items</th><th class="num">Paid</th><th>Status</th></tr></thead><tbody>
+      ${done.map(o => html`<tr><td>${fmtDateTime(o.paidAt || o.createdAt)}</td><td>${o.ref}</td><td>${o.customer?.name || ''}</td><td style="white-space:normal">${line(o)}</td><td class="num">${money(o.amount)}</td><td>${titleCase(o.status)}${o.depositKept ? ` · kept ${money(o.depositKept)}` : ''}</td></tr>`)}</tbody></table></div></details>` : ''}
+    <div class="row between section"><h2 style="margin:0">Catalogue</h2>${manager ? html`<button class="btn small" id="add-item">${icon('plus')}Add item</button>` : ''}</div>
+    <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Item</th><th>Category</th><th class="num">Sale price</th><th class="num">In stock</th><th class="num">Hire</th><th class="num">Units</th><th></th></tr></thead><tbody>
+      ${items.map(i => html`<tr ${i.active ? '' : raw('style="opacity:.55"')}><td>${i.emoji} ${i.name}${i.sizes.length ? html`<div class="faint">Sizes ${i.sizes.join(', ')}</div>` : ''}</td><td>${titleCase(i.category)}</td>
+        <td class="num">${i.forSale ? money(i.salePrice) : '—'}</td><td class="num">${i.forSale ? i.stock : '—'}</td><td class="num">${i.forRent ? `${money(i.rentPrice)}/${i.rentUnit}` : '—'}</td><td class="num">${i.forRent ? i.rentStock : '—'}</td>
+        <td>${manager ? html`<button class="btn small ghost" data-edit="${i.id}">Edit</button>` : ''}</td></tr>`)}</tbody></table></div>`);
+
+  $('#hand', pane).onsubmit = e => {
+    e.preventDefault();
+    const code = $('#hcode', pane).value.trim();
+    if (!code) return;
+    busy(e.submitter, async () => {
+      try { const o = await api(`${base}/handover`, { method: 'POST', body: { code } }); toast(`${o.kind === 'rental' ? 'Handed out' : 'Collected'}: ${o.items.map(i => i.name).join(', ')}`); repaint(ctx, storePane); }
+      catch (err) { toast(err.message, 'bad'); }
+    });
+  };
+  on(pane, 'click', '[data-return]', (_e, b) => sheet({
+    title: 'Mark as returned',
+    body: html`<p class="muted">The ${money(Number(b.dataset.deposit))} deposit goes back to the player. Keep part of it only for damage or missing items.</p>
+      <div class="field"><label for="keep">Keep from deposit (₹)</label><input id="keep" type="number" min="0" max="${Number(b.dataset.deposit) / 100}" step="1" value="0" inputmode="decimal"></div>
+      <div class="field"><label for="rnote">Reason (shown to the player if you keep any)</label><input id="rnote" maxlength="200"></div><p class="form-error" id="rerr" role="alert"></p>`,
+    foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="rgo">Confirm return</button>`,
+    onMount: (el, close) => {
+      $('#rgo', el).onclick = ev => busy(ev.currentTarget, async () => {
+        try { await api(`${base}/orders/${b.dataset.return}/return`, { method: 'POST', body: { keep: $('#keep', el).value, note: $('#rnote', el).value } }); close(); toast('Returned. Deposit refund sent.'); repaint(ctx, storePane); }
+        catch (err) { $('#rerr', el).textContent = err.message; }
+      });
+    },
+  }));
+  on(pane, 'click', '[data-refund]', async (_e, b) => {
+    const reason = await confirmDialog('The player gets a full refund and the items go back on sale.', { title: 'Refund this order?', confirmLabel: 'Refund', danger: true, input: { label: 'Reason (sent to the player)', required: true } });
+    if (!reason) return;
+    try { await api(`${base}/orders/${b.dataset.refund}/refund`, { method: 'POST', body: { reason } }); toast('Refunded'); repaint(ctx, storePane); } catch (e) { toast(e.message, 'bad'); }
+  });
+  const itemSheet = it => sheet({
+    title: it ? `Edit ${it.name}` : 'Add an item',
+    body: html`<form id="sf"><div class="grid-2">
+      <div class="field"><label for="s-name">Name</label><input id="s-name" name="name" value="${it?.name || ''}" required></div>
+      <div class="field"><label for="s-cat">Category</label><select id="s-cat" name="category">${STORE_CATS.map(c => html`<option value="${c}" ${it?.category === c ? raw('selected') : ''}>${titleCase(c)}</option>`)}</select></div>
+      <div class="field"><label for="s-emoji">Icon (emoji)</label><input id="s-emoji" name="emoji" value="${it?.emoji || ''}" maxlength="8"></div>
+      <div class="field"><label for="s-sizes">Sizes (comma separated)</label><input id="s-sizes" name="sizes" value="${it ? it.sizes.join(', ') : ''}" placeholder="S, M, L or 7, 8, 9"></div>
+      <div class="field"><label for="s-sale">Sale price (₹, blank if not for sale)</label><input id="s-sale" name="salePrice" type="number" min="0" value="${it?.forSale ? it.salePrice / 100 : ''}" inputmode="decimal"></div>
+      <div class="field"><label for="s-stock">In stock</label><input id="s-stock" name="stock" type="number" min="0" value="${it?.stock ?? 0}" inputmode="numeric"></div>
+      <div class="field"><label for="s-rent">Hire price (₹, blank if not for hire)</label><input id="s-rent" name="rentPrice" type="number" min="0" value="${it?.forRent ? it.rentPrice / 100 : ''}" inputmode="decimal"></div>
+      <div class="field"><label for="s-unit">Hire per</label><select id="s-unit" name="rentUnit"><option value="game" ${it?.rentUnit !== 'day' ? raw('selected') : ''}>Game (same day)</option><option value="day" ${it?.rentUnit === 'day' ? raw('selected') : ''}>Day (take home)</option></select></div>
+      <div class="field"><label for="s-dep">Deposit (₹)</label><input id="s-dep" name="deposit" type="number" min="0" value="${it ? it.deposit / 100 : 0}" inputmode="decimal"></div>
+      <div class="field"><label for="s-units">Units for hire</label><input id="s-units" name="rentStock" type="number" min="0" value="${it?.rentStock ?? 0}" inputmode="numeric"></div></div>
+      <div class="field"><label for="s-desc">Description</label><input id="s-desc" name="description" value="${it?.description || ''}" maxlength="300"></div>
+      ${it ? html`<label class="check"><input type="checkbox" name="active" ${it.active ? raw('checked') : ''}>Show in the app</label>` : ''}<p class="form-error" id="s-err" role="alert"></p></form>`,
+    foot: html`<button class="btn" data-close>Back</button><button class="btn primary" id="s-go">Save</button>`,
+    onMount: (el, close) => {
+      $('#s-go', el).onclick = ev => busy(ev.currentTarget, async () => {
+        const f = formData($('#sf', el));
+        if (it) f.active = !!f.active;
+        try { await api(it ? `${base}/items/${it.id}` : `${base}/items`, { method: it ? 'PATCH' : 'POST', body: f }); close(); toast('Saved'); repaint(ctx, storePane); }
+        catch (err) { $('#s-err', el).textContent = err.message; }
+      });
+    },
+  });
+  $('#add-item', pane)?.addEventListener('click', () => itemSheet(null));
+  on(pane, 'click', '[data-edit]', (_e, b) => itemSheet(items.find(i => i.id === b.dataset.edit)));
+}
+
 async function vendingPane(ctx) {
   const { vid, pane } = ctx;
   const { machines, orders, summary } = await api(`/owner/venues/${vid}/vending`);
@@ -1069,7 +1154,7 @@ async function settingsPane(ctx) {
   on(pane, 'click', '[data-court]', (_e, b) => courtSheet(v.courts.find(c => c.id === b.dataset.court)));
 }
 
-const PANES = { surveillance: surveillancePane, media: mediaPane, coaches: coachesPane, questions: questionsPane, access: accessPane, vending: vendingPane, sessions: sessionsPane, overview: overviewPane, calendar: calendarPane, bookings: bookingsPane, checkin: checkinPane, customers: customersPane, support: supportPane, reviews: reviewsPane,
+const PANES = { store: storePane, surveillance: surveillancePane, media: mediaPane, coaches: coachesPane, questions: questionsPane, access: accessPane, vending: vendingPane, sessions: sessionsPane, overview: overviewPane, calendar: calendarPane, bookings: bookingsPane, checkin: checkinPane, customers: customersPane, support: supportPane, reviews: reviewsPane,
   pricing: pricingPane, coupons: couponsPane, refunds: refundsPane, reports: reportsPane, settings: settingsPane, staff: staffPane, payouts: payoutsPane, audit: auditPane };
 
 // ---- Onboarding wizard ----------------------------------------------------------------------------------------------
