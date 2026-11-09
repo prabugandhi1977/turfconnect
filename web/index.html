@@ -4,28 +4,37 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>TurfConnect — Book sports turfs near you</title>
-  <meta name="description" content="Find, compare and book football, cricket, badminton and tennis turfs near you in under two minutes.">
-  <meta name="theme-color" content="#0d7a3e" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f1411" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Book football, cricket, badminton, tennis and swimming slots, classes and coaches in under two minutes.">
+  <meta name="theme-color" content="#f2f5ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1611" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Mukta+Malar:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#app">Skip to content</a>
-  <div id="offline" class="offline-banner" hidden role="status">You're offline. Showing saved bookings and venues.</div>
-  <header class="topbar">
-    <a class="brand" href="#/" aria-label="TurfConnect home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0d7a3e"/><path d="M6 10h20v12H6z" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M16 10v12" stroke="#fff" stroke-width="1.6"/><circle cx="16" cy="16" r="3" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M6 13.5h3v5H6M26 13.5h-3v5h3" fill="none" stroke="#fff" stroke-width="1.6"/></svg>
-      <span>TurfConnect</span>
-    </a>
-    <span class="spacer"></span>
-    <div id="topbar-actions" class="row nowrap"></div>
-  </header>
+  <div class="frame">
+    <aside id="side" class="appside" aria-label="Main menu"></aside>
+    <div class="col">
+      <div id="offline" class="offline-banner" hidden role="status">You're offline. Showing saved bookings and venues.</div>
+      <header class="topbar">
+        <button type="button" class="icon-btn menu-btn" id="menu-btn" aria-label="Open menu" aria-controls="side" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <a class="brand top-brand" href="#/" aria-label="TurfConnect home"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="1.5"/><path d="M12 6v12"/><circle cx="12" cy="12" r="2.4"/></svg></span>
+          <span class="logo-text">TurfConnect<small>turf · play · train</small></span></a>
+        <div id="status" class="status"></div>
+        <div id="topbar-actions" class="top-actions"></div>
+      </header>
+      <main id="app" tabindex="-1"><div class="skeleton sk-block" aria-label="Loading"></div></main>
+    </div>
+  </div>
   <nav id="nav" class="bottom-nav" aria-label="Main"></nav>
-  <main id="app" tabindex="-1"><div class="skeleton sk-block" aria-label="Loading"></div></main>
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
   <noscript><p style="padding:16px">TurfConnect needs JavaScript to book slots.</p></noscript>
 </body>

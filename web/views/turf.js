@@ -42,11 +42,17 @@ export async function homeView(main) {
   document.title = `${v.name} · TurfConnect`;
   mount(main, shell(site, null)); wireShell(main);
   const c = $('#content', main);
+  const when = new Intl.DateTimeFormat('en-IN', { timeZone: v.timezone || 'Asia/Kolkata', day: 'numeric', month: 'long' }).format(new Date());
   mount(c, html`
-    <section class="turf-hero" style="--img:url('${v.photos[0] || '/img/venue-1.svg'}')"><div class="shade"><span class="eyebrow">Welcome</span><h1>${v.name}</h1>
+    <div id="greet"></div>
+    <section class="turf-hero" aria-labelledby="hero-h"><div class="hero-copy">
+      <span class="eyebrow">Today at ${v.name} · ${when}</span>
+      <h1 id="hero-h">${site.games.length} games, one turf. Book a slot in under two minutes.</h1>
       <p>${v.description}</p>
-      <div class="row" style="gap:8px 16px">${v.rating ? html`<span class="rating">${stars(v.rating)} <span style="opacity:.85">(${v.reviews} reviews)</span></span>` : ''}<span>${icon('clock')} ${fmtTime(v.openTime)} – ${fmtTime(v.closeTime)}</span><span>${icon('pin')} ${v.address}, ${v.city}</span></div>
-      <div class="row" style="margin-top:12px"><button type="button" class="btn primary" id="book-btn">Book a game</button><a class="btn" href="${mapsUrl(v)}" target="_blank" rel="noopener">${icon('map')}Directions</a>${v.phone ? html`<a class="btn" href="tel:${v.phone.replace(/\s/g, '')}">${icon('phone')}Call</a>` : ''}</div></div></section>
+      <div class="checks">${[`Floodlit until ${fmtTime(v.closeTime)}`, `Free cancellation ${v.policy?.fullHours ?? 24}h before`, 'QR entry at the gate'].map(t => html`<span>${icon('check')}${t}</span>`)}</div>
+      <div class="meta">${v.rating ? html`<span>${stars(v.rating)} ${v.reviews} reviews</span>` : ''}<span>${icon('clock')} ${fmtTime(v.openTime)} – ${fmtTime(v.closeTime)}</span><span>${icon('pin')} ${v.address}, ${v.city}</span></div>
+      <div class="row"><button type="button" class="btn accent" id="book-btn">Book a game</button><a class="btn" href="${mapsUrl(v)}" target="_blank" rel="noopener">${icon('map')}Directions</a>${v.phone ? html`<a class="btn" href="tel:${v.phone.replace(/\s/g, '')}">${icon('phone')}Call</a>` : ''}</div></div>
+      <img class="hero-photo" src="${v.photos[0] || '/img/venue-1.svg'}" alt="" width="480" height="360"></section>
     <div id="again"></div>
     <section class="section" id="games"><h2>Pick a game</h2><div class="game-tiles">${site.games.map(g => html`<a class="card game-tile" href="#/game/${g.sport}" data-sport="${g.sport}">
       <span class="gt-emoji" aria-hidden="true">${SPORT_ICON[g.sport] || '🎯'}</span><h3>${titleCase(g.sport)}</h3><p class="muted">${BLURB[g.sport] || ''}</p>
@@ -80,6 +86,19 @@ export async function homeView(main) {
         <span class="tag ${m.status === 'online' ? 'good' : m.status === 'fault' ? 'bad' : 'warn'}">${m.status === 'online' ? 'Working' : m.status === 'fault' ? 'Out of order' : 'Offline'}</span></a>`)}</div></section>`);
   }).catch(() => {});
   if (state.token) {
+    // Greeting with stat cards, as on the Vayal home: next game, games this month, spend, and open offers.
+    Promise.all([api('/bookings/mine?scope=upcoming'), api('/bookings/mine?scope=past'), api('/me/coupons').catch(() => [])]).then(([up, past, coupons]) => {
+      const month = today.slice(0, 7), played = [...up, ...past].filter(b => b.date.startsWith(month) && ['confirmed', 'completed'].includes(b.status));
+      const next = up.find(b => b.status === 'confirmed');
+      const first = (state.me?.name || '').split(' ')[0];
+      mount($('#greet', c), html`<div class="greet"><span class="greet-mark" aria-hidden="true">${icon('home')}</span><div><h1>Vanakkam${first ? `, ${first}` : ''}</h1><p>Your games, classes and offers at a glance</p></div></div>
+        <div class="stat-grid">
+          <a class="kpi" href="${next ? `#/booking/${next.id}` : '#games'}"><span class="k">Next game</span><span class="v">${next ? fmtTime(next.startTime) : '—'}</span><span class="s ${next ? '' : 'good'}">${next ? `${next.date === today ? 'Today' : next.date === addDays(today, 1) ? 'Tomorrow' : next.date} · ${titleCase(next.sport)}` : 'Nothing booked yet — pick a game'}</span></a>
+          <a class="kpi" href="#/bookings"><span class="k">Games this month</span><span class="v">${played.length}</span><span class="s">${up.filter(b => b.status === 'confirmed').length} upcoming</span></a>
+          <a class="kpi" href="#/bookings?tab=past"><span class="k">Spent this month</span><span class="v">${money(played.reduce((a, b) => a + b.amount, 0))}</span><span class="s">Online and at the desk</span></a>
+          <a class="kpi" href="#/profile"><span class="k">Promo codes</span><span class="v">${coupons.length}</span><span class="s ${coupons.length ? 'good' : ''}">${coupons.length ? `${coupons[0].code} ready to use` : 'Invite friends to earn one'}</span></a>
+        </div>`);
+    }).catch(() => {});
     api('/bookings/mine?scope=past').then(list => {
       const seen = new Set(), recent = list.filter(b => (b.status === 'completed' || b.status === 'confirmed') && !seen.has(b.sport) && seen.add(b.sport)).slice(0, 5);
       if (!recent.length) return;

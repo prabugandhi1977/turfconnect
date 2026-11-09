@@ -9,7 +9,7 @@ export function initChat() {
   if (document.getElementById('chat-launcher')) return;
   const root = document.createElement('div');
   root.innerHTML = `
-    <button id="chat-launcher" class="chat-launcher" aria-label="Open chat assistant" aria-expanded="false" aria-controls="chat-panel">${icon('chat')}<span class="chat-launcher-label">Ask TurfBot</span></button>
+    <button id="chat-launcher" class="chat-launcher" aria-label="Open chat assistant" aria-expanded="false" aria-controls="chat-panel">${icon('sparkle')}<span class="chat-launcher-label">Ask TurfBot</span></button>
     <section id="chat-panel" class="chat-panel" role="dialog" aria-label="TurfBot assistant" hidden>
       <header class="chat-head"><span class="bot-avatar" aria-hidden="true">🤖</span><div class="grow"><b>TurfBot</b><div class="faint">Instant answers · replies in seconds</div></div>
         <button class="icon-btn" id="chat-reset" aria-label="Start a new chat" title="New chat">${icon('refresh')}</button><button class="icon-btn" id="chat-close" aria-label="Close chat">${icon('x')}</button></header>

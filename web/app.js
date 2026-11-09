@@ -1,10 +1,10 @@
-import { sheet, $, $$, api, busy, clearSession, confirmDialog, currentPath, empty, fmtDateTime, go, html, icon, liveStream, mount, resolveRoute, route, session, setMe, setSession, skeleton, state, store, toast } from './lib.js';
+import { sheet, $, $$, api, busy, clearSession, confirmDialog, currentPath, empty, fmtDateTime, go, html, icon, liveStream, mount, resolveRoute, route, session, setMe, setSession, skeleton, state, store, toast, titleCase, fmtTime, SPORT_ICON } from './lib.js';
 import { wellnessView, sessionDetailView } from './views/wellness.js';
 import { vendingListView, machineView, orderView } from './views/vending.js';
 import { coachesView, coachProfileView } from './views/coaches.js';
 import { initChat } from './chat.js';
 import { blogListView, blogPostView, questionsView, questionDetailView } from './views/community.js';
-import { homeView, gameView } from './views/turf.js';
+import { homeView, gameView, getSite } from './views/turf.js';
 import { galleryView } from './views/gallery.js';
 import { venueView, checkoutView, payView, bookingView, bookingsView, invoiceView } from './views/customer.js';
 import { supportListView, supportNewView, supportThreadView } from './views/support.js';
@@ -18,39 +18,98 @@ function applyTheme(t = store.get('tc.theme', 'system')) {
 applyTheme();
 
 // ---- Shell -----------------------------------------------------------------------------------------------------
-// Main navigation: an icon rail on desktop, a bottom bar on phones. "sec" items move into the More sheet on phones.
-const NAV = [
-  ['#/', 'home', 'Home', p => p === '/' || p.startsWith('/game') || p.startsWith('/venue')],
-  ['#/wellness', 'bulb', 'Wellness', p => p.startsWith('/wellness') || p.startsWith('/session')],
-  ['#/coaches', 'users', 'Coaches', p => p.startsWith('/coach')],
-  ['#/vending', 'cup', 'Snacks', p => p.startsWith('/vending') || p.startsWith('/order'), true],
-  ['#/blog', 'book', 'Learn', p => p.startsWith('/blog') || p.startsWith('/questions') || p.startsWith('/gallery'), true],
-  ['#/bookings', 'ticket', 'Bookings', p => /^\/(bookings|booking|checkout|pay|invoice)/.test(p)],
-  ['#/support', 'chat', 'Help', p => p.startsWith('/support'), true],
-  ['#/profile', 'user', 'Profile', p => /^\/(profile|login|notifications)/.test(p), true],
+// Grouped sidebar on desktop (a drawer behind the menu button on phones) and a five-tab bar on phones.
+const isGame = p => p.startsWith('/game') || p.startsWith('/venue');
+const GROUPS = site => [
+  ['Play & book', [
+    ['#/', 'home', 'Overview', p => p === '/'],
+    ...(site?.games || []).map(g => [`#/game/${g.sport}`, null, titleCase(g.sport), p => p === `/game/${g.sport}`, g.courts, SPORT_ICON[g.sport] || '🎯']),
+    ['#/bookings', 'ticket', 'My bookings', p => /^\/(bookings|booking|checkout|pay|invoice)/.test(p)],
+  ]],
+  ['Train & wellness', [
+    ['#/wellness', 'bulb', 'Wellness classes', p => p.startsWith('/wellness') || p.startsWith('/session')],
+    ['#/coaches', 'users', 'Coaches', p => p.startsWith('/coach')],
+  ]],
+  ['At the turf', [
+    ['#/vending', 'cup', 'Snacks & coffee', p => p.startsWith('/vending') || p.startsWith('/order')],
+    ['#/gallery', 'image', 'Photos & videos', p => p.startsWith('/gallery')],
+    ['#/blog', 'book', 'Learn & Q&A', p => p.startsWith('/blog') || p.startsWith('/questions')],
+  ]],
+  ['Account', [
+    ['#/notifications', 'bell', 'Notifications', p => p.startsWith('/notifications'), unread || null],
+    ['#/support', 'chat', 'Help', p => p.startsWith('/support')],
+    ['#/profile', 'user', 'Profile', p => p.startsWith('/profile') || p.startsWith('/login')],
+  ]],
+  ...((state.me?.venues?.length || state.me?.role === 'owner' || state.me?.role === 'admin') ? [['For business', [
+    ...(state.me.venues?.length || state.me.role === 'owner' ? [['#/owner', 'building', 'Venue dashboard', p => p.startsWith('/owner')]] : []),
+    ...(state.me.role === 'admin' ? [['#/admin', 'shield', 'Platform admin', p => p.startsWith('/admin')]] : []),
+  ]]] : []),
 ];
-let unread = 0;
-function renderShell(path = currentPath().path) {
-  const moreActive = NAV.some(([, , , match, sec]) => sec && match(path));
-  mount($('#nav'), html`${NAV.map(([href, ic, label, match, sec]) => html`<a href="${href}" class="${sec ? 'sec' : ''}" title="${label}" ${match(path) ? html`aria-current="page"` : ''}>${icon(ic)}<span>${label}</span></a>`)}
-    <button type="button" class="more-btn" aria-haspopup="dialog" ${moreActive ? html`aria-current="page"` : ''}>${icon('grid')}<span>More</span></button>`);
-  $('#nav .more-btn').onclick = () => sheet({
-    title: 'More', body: html`<div class="list">${NAV.filter(n => n[4]).map(([href, ic, label]) => html`<a class="list-item" href="${href}" data-go><span class="machine-ico" aria-hidden="true">${icon(ic)}</span><div class="grow"><div class="title">${label}</div></div></a>`)}</div>`,
-    onMount: (el, close) => el.addEventListener('click', e => { if (e.target.closest('[data-go]')) close(); }),
-  });
-  const me = state.me;
-  const business = me && (me.venues?.length || me.role === 'owner');
-  mount($('#topbar-actions'), html`
-    ${me?.role === 'admin' ? html`<a class="btn small ghost" href="#/admin">${icon('shield')}<span>Admin</span></a>` : ''}
-    ${business ? html`<a class="btn small ghost" href="#/owner">${icon('building')}<span>Venue</span></a>` : ''}
-    <button class="icon-btn" id="theme-btn" aria-label="Switch colour theme">${icon(document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches) ? 'sun' : 'moon')}</button>
-    ${me ? html`<a class="icon-btn" href="#/notifications" aria-label="Notifications${unread ? `, ${unread} unread` : ''}">${icon('bell')}${unread ? html`<span class="badge-dot">${unread > 9 ? '9+' : unread}</span>` : ''}</a>`
-      : html`<a class="btn small primary" href="#/login">Sign in</a>`}`);
-  $('#theme-btn').onclick = () => {
-    const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-    store.set('tc.theme', dark ? 'light' : 'dark'); applyTheme(); renderShell();
-  };
+const TABS = [['#/', 'home', 'Home', p => p === '/' || isGame(p)], ['#/wellness', 'bulb', 'Wellness', p => p.startsWith('/wellness') || p.startsWith('/session')],
+  ['#/coaches', 'users', 'Coaches', p => p.startsWith('/coach')], ['#/bookings', 'ticket', 'Bookings', p => /^\/(bookings|booking|checkout|pay|invoice)/.test(p)],
+  ['#/profile', 'user', 'Account', p => /^\/(profile|login|notifications|support)/.test(p)]];
+
+let unread = 0, site = null;
+getSite().then(s => { site = s; renderShell(); }).catch(() => {});
+const themeNow = () => store.get('tc.theme', 'system');
+const closedGroups = () => store.get('tc.side.closed', []);
+
+function openStatus(v) {
+  // Open/closed from the venue's hours in its own time zone.
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: v.timezone || 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short', day: 'numeric', month: 'short' }).formatToParts(new Date()).map(p => [p.type, p.value]));
+  const mins = +parts.hour * 60 + +parts.minute, [oh, om] = v.openTime.split(':').map(Number), [ch, cm] = v.closeTime.split(':').map(Number);
+  const open = mins >= oh * 60 + om && mins < ch * 60 + cm;
+  return { open, label: open ? `Open now · until ${fmtTime(v.closeTime)}` : `Closed · opens ${fmtTime(v.openTime)}`, date: `${parts.weekday} ${parts.day} ${parts.month}` };
 }
+
+function renderShell(path = currentPath().path) {
+  const closed = closedGroups();
+  mount($('#side'), html`
+    <div class="side-brand"><a class="brand" href="#/" data-go><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="1.5"/><path d="M12 6v12"/><circle cx="12" cy="12" r="2.4"/></svg></span>
+      <span class="logo-text">TurfConnect</span></a><p>Turf · play · train</p>
+      <button type="button" class="icon-btn side-close" data-close-side aria-label="Close menu">${icon('x')}</button></div>
+    <nav class="side-nav" aria-label="Sections">${GROUPS(site).map(([title, items]) => html`<div class="side-group" ${closed.includes(title) ? html`data-closed` : ''}>
+      <button type="button" class="side-h" data-group="${title}" aria-expanded="${!closed.includes(title)}">${title}${icon('chevron')}</button>
+      <ul>${items.map(([href, ic, label, match, count, emoji]) => html`<li><a href="${href}" data-go ${match(path) ? html`aria-current="page"` : ''}>
+        ${emoji ? html`<span class="side-em" aria-hidden="true">${emoji}</span>` : icon(ic)}<span class="lb">${label}</span>${count ? html`<span class="cnt">${count}</span>` : ''}</a></li>`)}</ul></div>`)}</nav>
+    <div class="side-foot"><span class="eyebrow">Theme</span><div class="seg" role="group" aria-label="Colour theme">${[['system', 'monitor', 'Match device'], ['light', 'sun', 'Light'], ['dark', 'moon', 'Dark']].map(([k, ic, l]) => html`
+      <button type="button" data-theme-set="${k}" aria-pressed="${themeNow() === k}" title="${l}" aria-label="${l}">${icon(ic)}</button>`)}</div></div>`);
+  mount($('#nav'), html`${TABS.map(([href, ic, label, match]) => html`<a href="${href}" ${match(path) ? html`aria-current="page"` : ''}>${icon(ic)}<span>${label}</span></a>`)}`);
+  renderStatus();
+  mountActions(state.me);
+}
+// Top bar: open/closed pill, date and location of the turf (refreshed every minute).
+function renderStatus() {
+  const v = site?.venue;
+  if (!v) return;
+  const s = openStatus(v);
+  mount($('#status'), html`<span class="live ${s.open ? 'on' : ''}"><i aria-hidden="true"></i>${s.label}</span><span class="st-date mono">${s.date}</span>
+    <span class="st-where"><small>${v.name}</small><b>${v.address.split(',').slice(-2).join(',').trim() || v.city}</b></span>`);
+}
+function mountActions(me) {
+  mount($('#topbar-actions'), html`
+    ${me ? html`<a class="icon-btn" href="#/notifications" aria-label="Notifications${unread ? `, ${unread} unread` : ''}">${icon('bell')}${unread ? html`<span class="badge-dot">${unread > 9 ? '9+' : unread}</span>` : ''}</a>
+      <a class="avatar-btn" href="#/profile" aria-label="Your account">${(me.name || me.email || '?').trim()[0].toUpperCase()}</a>`
+      : html`<a class="btn small" href="#/login">Sign in</a>`}`);
+}
+// Sidebar interactions are wired once; the sidebar's contents are re-rendered on every route change.
+const sideEl = () => $('#side');
+function setDrawer(open) {
+  sideEl().classList.toggle('open', open); document.body.classList.toggle('drawer-open', open);
+  $('#menu-btn').setAttribute('aria-expanded', open);
+  if (open) sideEl().querySelector('a,button')?.focus(); else if (document.activeElement && sideEl().contains(document.activeElement)) $('#menu-btn').focus();
+}
+$('#menu-btn').onclick = () => setDrawer(!sideEl().classList.contains('open'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sideEl().classList.contains('open')) setDrawer(false); });
+document.addEventListener('click', e => { if (document.body.classList.contains('drawer-open') && !sideEl().contains(e.target) && !e.target.closest('#menu-btn')) setDrawer(false); });
+sideEl().addEventListener('click', e => {
+  if (e.target.closest('[data-go],[data-close-side]')) setDrawer(false);
+  const g = e.target.closest('[data-group]');
+  if (g) { const t = g.dataset.group, c = closedGroups(); store.set('tc.side.closed', c.includes(t) ? c.filter(x => x !== t) : [...c, t]); renderShell(); }
+  const th = e.target.closest('[data-theme-set]');
+  if (th) { store.set('tc.theme', th.dataset.themeSet); applyTheme(); renderShell(); }
+});
+setInterval(() => { if (!document.hidden) renderStatus(); }, 60000);
 window.addEventListener('route', e => renderShell(e.detail.path));
 window.addEventListener('session', () => { renderShell(); startUserStream(); });
 

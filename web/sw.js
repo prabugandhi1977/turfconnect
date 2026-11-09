@@ -1,6 +1,6 @@
 // Offline support: the app shell is cached on install; venue pages, images and the player's bookings are cached as
 // they are viewed (network first, cache as fallback) so tickets still open with no signal at the venue.
-const VERSION = 'tc-v22';
+const VERSION = 'tc-v23';
 const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/lib.js', '/qr.js', '/views/customer.js', '/views/wellness.js', '/views/vending.js', '/views/community.js', '/views/coaches.js', '/views/turf.js', '/views/gallery.js', '/chat.js', '/views/owner.js', '/views/admin.js', '/views/support.js', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

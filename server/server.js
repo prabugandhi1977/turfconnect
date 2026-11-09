@@ -37,7 +37,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'x-frame-options': 'DENY',
   'permissions-policy': 'camera=(self), geolocation=(self), microphone=()',
-  'content-security-policy': "default-src 'self'; img-src 'self' data: blob: https:; media-src 'self'; frame-src https://www.youtube-nocookie.com https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  'content-security-policy': "default-src 'self'; img-src 'self' data: blob: https:; media-src 'self'; frame-src https://www.youtube-nocookie.com https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
 async function serveFile(res, base, rel, { fallback = null, cache = 'no-cache', req = null } = {}) {
