@@ -3,15 +3,15 @@
 import { api, esc, icon, session } from './lib.js';
 
 const KEY = 'tc.chat';
-const WELCOME = { from: 'bot', text: 'Hi, I am TurfBot. Ask me about free slots, your bookings, refunds, coaches, classes or snack machines.', quick: ['Find a turf', 'My next booking', 'Find a coach', 'Snacks & coffee', 'Yoga classes', 'Talk to a person'] };
+const WELCOME = { from: 'bot', text: 'Vanakkam! I am Ask Thidal. Ask me about free slots, your bookings, refunds, coaches, classes or snack machines.', quick: ['Find a turf', 'My next booking', 'Find a coach', 'Snacks & coffee', 'Yoga classes', 'Talk to a person'] };
 
 export function initChat() {
   if (document.getElementById('chat-launcher')) return;
   const root = document.createElement('div');
   root.innerHTML = `
-    <button id="chat-launcher" class="chat-launcher" aria-label="Open chat assistant" aria-expanded="false" aria-controls="chat-panel">${icon('sparkle')}<span class="chat-launcher-label">Ask TurfBot</span></button>
-    <section id="chat-panel" class="chat-panel" role="dialog" aria-label="TurfBot assistant" hidden>
-      <header class="chat-head"><span class="bot-avatar" aria-hidden="true">🤖</span><div class="grow"><b>TurfBot</b><div class="faint">Instant answers · replies in seconds</div></div>
+    <button id="chat-launcher" class="chat-launcher" aria-label="Open Ask Thidal, the chat assistant" aria-expanded="false" aria-controls="chat-panel">${icon('sparkle')}<span class="chat-launcher-label">Ask Thidal</span></button>
+    <section id="chat-panel" class="chat-panel" role="dialog" aria-label="Ask Thidal assistant" hidden>
+      <header class="chat-head"><span class="bot-avatar" aria-hidden="true">🤖</span><div class="grow"><b>Ask Thidal</b><div class="faint">Instant answers · replies in seconds</div></div>
         <button class="icon-btn" id="chat-reset" aria-label="Start a new chat" title="New chat">${icon('refresh')}</button><button class="icon-btn" id="chat-close" aria-label="Close chat">${icon('x')}</button></header>
       <div id="chat-log" class="chat-log" role="log" aria-live="polite"></div>
       <form id="chat-form" class="chat-form" autocomplete="off"><label class="sr-only" for="chat-input">Your message</label><input id="chat-input" maxlength="300" placeholder="Type a question…" enterkeyhint="send"><button class="btn primary" aria-label="Send">${icon('send')}</button></form>
@@ -26,7 +26,7 @@ export function initChat() {
   function draw() {
     log.innerHTML = msgs.map((m, i) => m.from === 'user' ? `<div class="msg user">${esc(m.text)}</div>`
       : `<div class="msg bot"><p>${esc(m.text)}</p>${(m.cards || []).map(cardHtml).join('')}${i === msgs.length - 1 && m.quick?.length ? `<div class="quick">${m.quick.map(q => `<button type="button" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}</div>`).join('')
-      + (waiting ? '<div class="msg bot typing" aria-label="TurfBot is typing"><i></i><i></i><i></i></div>' : '');
+      + (waiting ? '<div class="msg bot typing" aria-label="Ask Thidal is typing"><i></i><i></i><i></i></div>' : '');
     log.scrollTop = log.scrollHeight;
   }
   const open = on => {

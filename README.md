@@ -86,7 +86,7 @@ open a profile with rating, likes and comments, pick a free slot and book. A coa
 a hidden court so the same slot guard that prevents double-booking a pitch prevents double-booking a coach. Players like coaches with the heart; after a completed session they rate
 and comment on the booking page, and managers can reply publicly to a comment.
 
-## Chat assistant (TurfBot)
+## Chat assistant (Ask Thidal)
 
 A floating chat on every page answers instantly from live data, with no outside AI service: free slots by sport, day and time ("badminton tomorrow evening"), prices, the player's
 bookings and what a cancellation would refund, refund and payment help, wellness classes, coaches, machine status and pickup codes, entry/QR, promo codes, and venue details.
