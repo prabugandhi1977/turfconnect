@@ -19,6 +19,7 @@ import supportRoutes from './routes/support.js';
 import adminRoutes from './routes/admin.js';
 import wellnessRoutes from './routes/wellness.js';
 import vendingRoutes from './routes/vending.js';
+import storeRoutes from './routes/store.js';
 import accessRoutes from './routes/access.js';
 import communityRoutes from './routes/community.js';
 import coachRoutes from './routes/coaches.js';
@@ -26,10 +27,11 @@ import assistantRoutes from './routes/assistant.js';
 import mediaRoutes from './routes/media.js';
 import { sweepAccess, simulateDevices } from './access.js';
 import { sweepVending, simulateMachines } from './vending.js';
+import { sweepStore } from './store.js';
 
 const router = createRouter();
 router.get('/health', () => ({ ok: true, time: new Date().toISOString() }), { auth: 'none' });
-for (const register of [authRoutes, discoveryRoutes, bookingRoutes, ownerRoutes, supportRoutes, adminRoutes, wellnessRoutes, vendingRoutes, accessRoutes, communityRoutes, coachRoutes, assistantRoutes, mediaRoutes]) register(router);
+for (const register of [authRoutes, discoveryRoutes, bookingRoutes, ownerRoutes, supportRoutes, adminRoutes, wellnessRoutes, vendingRoutes, storeRoutes, accessRoutes, communityRoutes, coachRoutes, assistantRoutes, mediaRoutes]) register(router);
 
 const WEB = join(ROOT, 'web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
@@ -92,7 +94,7 @@ async function handle(req, res) {
 }
 
 export function sweep() {
-  try { expireHolds(); completeFinished(); sweepVending(); sweepAccess(); deliverDue(); } catch (e) { console.error('Sweep failed:', e); }
+  try { expireHolds(); completeFinished(); sweepVending(); sweepStore(); sweepAccess(); deliverDue(); } catch (e) { console.error('Sweep failed:', e); }
 }
 
 export function start(port = config.port, host = '0.0.0.0') {

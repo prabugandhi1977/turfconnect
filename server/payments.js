@@ -12,6 +12,7 @@ import { notify } from './notify.js';
 import { publishUser, publishVenue } from './events.js';
 import { audit } from './audit.js';
 import { confirmOrderPaid, failOrderPayment, refundOrder } from './vending.js';
+import { confirmStorePaid, failStorePayment, refundStoreOrder } from './store.js';
 
 const SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000;
 let selfBaseUrl = `http://127.0.0.1:${config.port}`;
@@ -66,14 +67,16 @@ export function handleWebhook(raw, signature) {
   if (!verifySignature(signature, raw)) throw new HttpError(401, 'Invalid webhook signature');
   let event; try { event = JSON.parse(raw); } catch { bad('Invalid JSON'); }
   if (!event?.id || !event?.type) bad('Malformed event');
-  const touched = [], touchedOrders = [];
+  const touched = [], touchedOrders = [], touchedStore = [];
   const result = transaction(() => {
     if (one('SELECT 1 FROM webhook_events WHERE event_id=?', event.id)) return { received: true, duplicate: true };
     run('INSERT INTO webhook_events (event_id,type,received_at) VALUES (?,?,?)', event.id, event.type, now());
     const payment = one('SELECT * FROM payments WHERE intent_id=?', event.data?.intentId);
     if (!payment) {
       const op = one('SELECT * FROM order_payments WHERE intent_id=?', event.data?.intentId);
-      return op ? handleOrderEvent(event, op, touchedOrders) : { received: true, ignored: 'unknown intent' };
+      if (op) return handleOrderEvent(event, op, touchedOrders);
+      const sp = one('SELECT * FROM store_payments WHERE intent_id=?', event.data?.intentId);
+      return sp ? handleStoreEvent(event, sp, touchedStore) : { received: true, ignored: 'unknown intent' };
     }
     const b = one('SELECT * FROM bookings WHERE id=?', payment.booking_id);
     touched.push(b);
@@ -111,6 +114,7 @@ export function handleWebhook(raw, signature) {
     publishUser(b.customer_id, 'booking', { id: b.id, status });
   }
   for (const o of touchedOrders) publishUser(o.customer_id, 'order', { id: o.id, status: one('SELECT status FROM vending_orders WHERE id=?', o.id).status });
+  for (const o of touchedStore) publishUser(o.customer_id, 'order', { id: o.id, status: one('SELECT status FROM store_orders WHERE id=?', o.id).status });
   return result;
 }
 
@@ -138,11 +142,39 @@ function handleOrderEvent(event, op, touchedOrders) {
   return { received: true, ignored: event.type };
 }
 
+// Shop and rental payments: same rules; items that went while the player paid are refunded in full.
+function handleStoreEvent(event, sp, touchedStore) {
+  const o = one('SELECT * FROM store_orders WHERE id=?', sp.order_id);
+  touchedStore.push(o);
+  if (event.type === 'payment_intent.succeeded') {
+    if (sp.status === 'succeeded') return { received: true };
+    if (event.data.amount !== sp.amount) {
+      run("UPDATE store_payments SET status='failed', updated_at=? WHERE id=?", now(), sp.id);
+      audit(null, 'payment.amount_mismatch', 'store_payment', sp.id, { venueId: o.venue_id, expected: sp.amount, got: event.data.amount });
+      return { received: true, error: 'amount mismatch' };
+    }
+    run("UPDATE store_payments SET status='succeeded', updated_at=? WHERE id=?", now(), sp.id);
+    const confirmed = confirmStorePaid(o.id);
+    if (!confirmed.ok) {
+      run("UPDATE store_orders SET status='paid', updated_at=? WHERE id=?", now(), o.id);
+      refundStoreOrder(one('SELECT * FROM store_orders WHERE id=?', o.id), { reason: 'The items were taken before your payment cleared.' });
+    }
+    return { received: true, confirmed: confirmed.ok };
+  }
+  if (event.type === 'payment_intent.payment_failed') {
+    run("UPDATE store_payments SET status='failed', updated_at=? WHERE id=?", now(), sp.id);
+    failStorePayment(o.id);
+    return { received: true };
+  }
+  return { received: true, ignored: event.type };
+}
+
 // ---- Sandbox checkout ----------------------------------------------------------------------------------------
 export async function completeSandboxCheckout(user, intentId, outcome) {
   if (config.paymentProvider !== 'sandbox') notFound();
   const payment = one('SELECT p.*, b.customer_id FROM payments p JOIN bookings b ON b.id=p.booking_id WHERE p.intent_id=?', intentId)
-    || one('SELECT p.*, o.customer_id FROM order_payments p JOIN vending_orders o ON o.id=p.order_id WHERE p.intent_id=?', intentId);
+    || one('SELECT p.*, o.customer_id FROM order_payments p JOIN vending_orders o ON o.id=p.order_id WHERE p.intent_id=?', intentId)
+    || one('SELECT p.*, o.customer_id FROM store_payments p JOIN store_orders o ON o.id=p.order_id WHERE p.intent_id=?', intentId);
   if (!payment || payment.customer_id !== user.id) notFound('Payment not found');
   if (payment.status !== 'requires_payment') conflict('This payment is already finished');
   const body = JSON.stringify({
@@ -161,7 +193,13 @@ export function sandboxIntent(user, intentId) {
   if (!p) {
     const q = one(`SELECT p.intent_id, p.amount, p.currency, p.status, o.id AS order_id, o.ref, o.customer_id, o.hold_expires_at, v.name AS venue, m.name AS machine
                    FROM order_payments p JOIN vending_orders o ON o.id=p.order_id JOIN venues v ON v.id=o.venue_id JOIN vending_machines m ON m.id=o.machine_id WHERE p.intent_id=?`, intentId);
-    if (!q || q.customer_id !== user.id) notFound('Payment not found');
+    if (!q) {
+      const st = one(`SELECT p.intent_id, p.amount, p.currency, p.status, o.id AS order_id, o.kind, o.ref, o.customer_id, o.hold_expires_at, v.name AS venue
+                       FROM store_payments p JOIN store_orders o ON o.id=p.order_id JOIN venues v ON v.id=o.venue_id WHERE p.intent_id=?`, intentId);
+      if (!st || st.customer_id !== user.id) notFound('Payment not found');
+      return { intentId: st.intent_id, amount: st.amount, currency: st.currency, status: st.status, storeOrderId: st.order_id, ref: st.ref, venue: `${st.venue} · ${st.kind === 'rental' ? 'Rentals' : 'Shop'}`, holdExpiresAt: st.hold_expires_at };
+    }
+    if (q.customer_id !== user.id) notFound('Payment not found');
     return { intentId: q.intent_id, amount: q.amount, currency: q.currency, status: q.status, orderId: q.order_id, ref: q.ref, venue: `${q.venue} · ${q.machine}`, holdExpiresAt: q.hold_expires_at };
   }
   if (p.customer_id !== user.id) notFound('Payment not found');

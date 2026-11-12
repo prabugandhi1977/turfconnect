@@ -6,6 +6,7 @@ import { initChat } from './chat.js';
 import { blogListView, blogPostView, questionsView, questionDetailView } from './views/community.js';
 import { homeView, gameView, getSite } from './views/turf.js';
 import { galleryView } from './views/gallery.js';
+import { shopView, rentView, storeOrderView } from './views/store.js';
 import { venueView, checkoutView, payView, bookingView, bookingsView, invoiceView } from './views/customer.js';
 import { supportListView, supportNewView, supportThreadView } from './views/support.js';
 import { ownerHome, ownerNew, ownerConsole } from './views/owner.js';
@@ -30,7 +31,9 @@ const GROUPS = site => [
     ['#/wellness', 'bulb', 'Wellness classes', p => p.startsWith('/wellness') || p.startsWith('/session')],
     ['#/coaches', 'users', 'Coaches', p => p.startsWith('/coach')],
   ]],
-  ['At the turf', [
+  ['At Thidal', [
+    ['#/shop', 'bag', 'Shop', p => p === '/shop' || p.startsWith('/shop/')],
+    ['#/rent', 'key', 'Rent gear', p => p.startsWith('/rent')],
     ['#/vending', 'cup', 'Snacks & coffee', p => p.startsWith('/vending') || p.startsWith('/order')],
     ['#/gallery', 'image', 'Photos & videos', p => p.startsWith('/gallery')],
     ['#/blog', 'book', 'Learn & Q&A', p => p.startsWith('/blog') || p.startsWith('/questions')],
@@ -292,6 +295,9 @@ async function notificationsView(main) {
 route('/', homeView, { keepScroll: false, wide: true });
 route('/game/:sport', gameView, { wide: true });
 route('/gallery', galleryView, { title: 'Photos & videos' });
+route('/shop', shopView, { title: 'Shop' });
+route('/rent', rentView, { title: 'Rent gear' });
+route('/shop/order/:id', storeOrderView, { auth: true, title: 'Your order' });
 // Older links to the venue page land on the matching game, or the home page.
 route('/venue/:slug', (main, _p, q) => go(q.get('sport') ? `#/game/${q.get('sport')}${q.get('date') ? '?date=' + q.get('date') : ''}` : '#/', { replace: true }));
 route('/wellness', wellnessView, { keepScroll: false, title: 'Wellness classes' });
